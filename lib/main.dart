@@ -1,8 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+const bool _useMockMapPreview = true;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,9 +21,146 @@ class GoPlanApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF28D99A)),
         scaffoldBackgroundColor: const Color(0xFFF6F6F6),
         useMaterial3: true,
-        fontFamily: Platform.isIOS ? '.SF Pro Text' : null,
+        fontFamily: defaultTargetPlatform == TargetPlatform.iOS
+            ? '.SF Pro Text'
+            : null,
       ),
+      builder: (context, child) => _ResponsiveAppFrame(child: child),
       home: const GoPlanShell(),
+    );
+  }
+}
+
+class _ResponsiveAppFrame extends StatelessWidget {
+  const _ResponsiveAppFrame({required this.child});
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final content = child ?? const SizedBox.shrink();
+    if (!kIsWeb || size.width < 760) return content;
+
+    final previewWidth = size.width >= 1180 ? 430.0 : 390.0;
+    final previewHeight = (size.height - 56).clamp(680.0, 860.0);
+
+    return ColoredBox(
+      color: const Color(0xFFEFF4F1),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Row(
+            children: [
+              if (size.width >= 1040)
+                const Expanded(child: _WebIntroPanel())
+              else
+                const SizedBox(width: 24),
+              SizedBox(
+                width: previewWidth,
+                height: previewHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6F6F6),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .16),
+                        blurRadius: 34,
+                        offset: const Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        size: Size(previewWidth, previewHeight),
+                        padding: EdgeInsets.zero,
+                        viewPadding: EdgeInsets.zero,
+                      ),
+                      child: content,
+                    ),
+                  ),
+                ),
+              ),
+              if (size.width >= 1040) const Spacer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WebIntroPanel extends StatelessWidget {
+  const _WebIntroPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 36, right: 56),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Image.asset('assets/images/GoPlan.png', width: 156),
+          const SizedBox(height: 34),
+          const Text(
+            '用 AI 把旅行想法\n整理成可执行计划',
+            style: TextStyle(
+              fontSize: 44,
+              height: 1.12,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF111111),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Web 端用于快速预览和调试，后续同一套 Flutter 代码仍可继续打包 Android / iOS。',
+            style: TextStyle(
+              fontSize: 17,
+              height: 1.55,
+              color: Color(0xFF5E6864),
+            ),
+          ),
+          const SizedBox(height: 28),
+          const Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _WebFeaturePill(label: 'AI 对话'),
+              _WebFeaturePill(label: '旅行计划'),
+              _WebFeaturePill(label: 'Mock 地图'),
+              _WebFeaturePill(label: '跨端打包'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WebFeaturePill extends StatelessWidget {
+  const _WebFeaturePill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFDDE6E2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
+      ),
     );
   }
 }
@@ -260,9 +397,9 @@ class _HomeTopSection extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Positioned(left: 0, right: 0, top: 0, child: _HomeHeader()),
-          Positioned(left: 0, right: 0, top: 54, child: _WeatherPanel()),
-          Positioned(left: 0, right: 0, top: 112, child: _PhotoStrip()),
-          Positioned(left: 0, right: 0, top: 96, child: _SearchBar()),
+          Positioned(left: 0, right: 0, top: 42, child: _WeatherPanel()),
+          Positioned(left: 0, right: 0, top: 104, child: _PhotoStrip()),
+          Positioned(left: 0, right: 0, top: 96, child: _AiDialogBar()),
           Positioned(left: 0, right: 0, bottom: 8, child: _TopDivider()),
         ],
       ),
@@ -361,40 +498,389 @@ class _WeatherPanel extends StatelessWidget {
   }
 }
 
-class _SearchBar extends StatelessWidget {
-  const _SearchBar();
+class _AiDialogBar extends StatelessWidget {
+  const _AiDialogBar();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x11000000),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+        onTap: () => _openAiChat(context),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x11000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.search, color: Color(0xFF4C4C4C)),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '来构筑你的想法......',
-              style: TextStyle(color: Color(0xFFB7B7B7), fontSize: 14),
-            ),
+          child: const Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: Color(0xFF4C4C4C)),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '和 GoPlan AI 聊聊你的旅行想法',
+                  style: TextStyle(color: Color(0xFF8F8F8F), fontSize: 14),
+                ),
+              ),
+              Icon(Icons.keyboard_voice_outlined, color: Color(0xFF4C4C4C)),
+            ],
           ),
-          Icon(Icons.mic_none, color: Color(0xFF4C4C4C)),
-        ],
+        ),
       ),
     );
   }
+
+  void _openAiChat(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _AiChatSheet(),
+    );
+  }
+}
+
+class _AiChatSheet extends StatefulWidget {
+  const _AiChatSheet();
+
+  @override
+  State<_AiChatSheet> createState() => _AiChatSheetState();
+}
+
+class _AiChatSheetState extends State<_AiChatSheet> {
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<_AiChatMessage> _messages = [
+    const _AiChatMessage(
+      role: _AiChatRole.assistant,
+      text: '你好，我是 GoPlan AI。你可以告诉我想去哪、几天、和谁去，我会先帮你整理成行程思路。',
+    ),
+  ];
+  bool _isThinking = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send([String? preset]) async {
+    final text = (preset ?? _controller.text).trim();
+    if (text.isEmpty || _isThinking) return;
+
+    setState(() {
+      _controller.clear();
+      _messages.add(_AiChatMessage(role: _AiChatRole.user, text: text));
+      _isThinking = true;
+    });
+    _scrollToBottom();
+
+    final reply = await _mockDeepSeekReply(text);
+    if (!mounted) return;
+
+    setState(() {
+      _messages.add(_AiChatMessage(role: _AiChatRole.assistant, text: reply));
+      _isThinking = false;
+    });
+    _scrollToBottom();
+  }
+
+  Future<String> _mockDeepSeekReply(String prompt) async {
+    await Future<void>.delayed(const Duration(milliseconds: 650));
+    if (prompt.contains('川西') || prompt.contains('雪山')) {
+      return '可以先按 6 天小团路线规划：成都集合，康定适应海拔，新都桥拍摄，塔公草原看雪山，最后回成都。我后续接入 DeepSeek 后，可以继续生成每日路线、预算和 POI。';
+    }
+    if (prompt.contains('杭州') || prompt.contains('周末')) {
+      return '周末游建议控制在 2-3 个核心区域：西湖、灵隐、河坊街。第一天慢逛城市风景，第二天留给茶园或博物馆，会比较松弛。';
+    }
+    if (prompt.contains('云南') || prompt.contains('毕业')) {
+      return '毕业旅行适合做成 8-9 天：昆明落地，大理放松，丽江古城和玉龙雪山，再去香格里拉。重点是减少搬运行李的频率。';
+    }
+    return '我先记下这个想法。可以继续补充出发城市、旅行天数、预算、人群和偏好的节奏，我会把它整理成可执行的行程草案。';
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: DraggableScrollableSheet(
+        initialChildSize: .82,
+        minChildSize: .5,
+        maxChildSize: .94,
+        builder: (context, sheetController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFFF7F8F7),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD8DCDC),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 10, 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF111111),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFF28D99A),
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'GoPlan AI',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              '本地 Mock 对话 · 预留 DeepSeek 接入',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF8C8C8C),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    children: [
+                      _AiSuggestionChip(
+                        text: '帮我规划川西 6 天',
+                        onTap: () => _send('帮我规划川西雪山小团 6 天'),
+                      ),
+                      _AiSuggestionChip(
+                        text: '杭州周末怎么安排',
+                        onTap: () => _send('杭州情侣周末游怎么安排'),
+                      ),
+                      _AiSuggestionChip(
+                        text: '云南毕业旅行',
+                        onTap: () => _send('云南朋友毕业旅行 9 天'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
+                    itemCount: _messages.length + (_isThinking ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (_isThinking && index == _messages.length) {
+                        return const _AiThinkingBubble();
+                      }
+                      return _AiMessageBubble(message: _messages[index]);
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _send(),
+                          decoration: InputDecoration(
+                            hintText: '输入你的旅行想法...',
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 13,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(22),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton.filled(
+                        onPressed: _isThinking ? null : () => _send(),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF111111),
+                          disabledBackgroundColor: const Color(0xFFBFC4C2),
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.arrow_upward_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AiSuggestionChip extends StatelessWidget {
+  const _AiSuggestionChip({required this.text, required this.onTap});
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        onPressed: onTap,
+        label: Text(text),
+        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        backgroundColor: Colors.white,
+        side: const BorderSide(color: Color(0xFFE8ECEA)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+    );
+  }
+}
+
+class _AiMessageBubble extends StatelessWidget {
+  const _AiMessageBubble({required this.message});
+
+  final _AiChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.role == _AiChatRole.user;
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * .74,
+        ),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: isUser ? const Color(0xFF111111) : Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isUser ? 18 : 6),
+            bottomRight: Radius.circular(isUser ? 6 : 18),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .05),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Text(
+          message.text,
+          style: TextStyle(
+            color: isUser ? Colors.white : const Color(0xFF242A2D),
+            fontSize: 14,
+            height: 1.38,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiThinkingBubble extends StatelessWidget {
+  const _AiThinkingBubble();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: 10),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: Text(
+              'GoPlan AI 正在整理...',
+              style: TextStyle(fontSize: 14, color: Color(0xFF7D8588)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _AiChatRole { user, assistant }
+
+class _AiChatMessage {
+  const _AiChatMessage({required this.role, required this.text});
+
+  final _AiChatRole role;
+  final String text;
 }
 
 class _PhotoStrip extends StatelessWidget {
@@ -418,7 +904,7 @@ class _PhotoStrip extends StatelessWidget {
         children: [
           for (var i = 0; i < photos.length; i++)
             Positioned(
-              left: 6 + i * 43.0,
+              left: 22 + i * 43.0,
               top: i.isEven ? 22 : 14,
               child: Transform.rotate(
                 angle: (i.isEven ? -1 : 1) * 0.07,
@@ -895,6 +1381,9 @@ class _NativeMapViewState extends State<NativeMapView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_useMockMapPreview) {
+      return _MockExploreMap(pois: widget.pois);
+    }
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidView(
         viewType: 'goplan/native_map_view',
@@ -915,6 +1404,295 @@ class _NativeMapViewState extends State<NativeMapView> {
     }
     return const _MapFallback();
   }
+}
+
+class _MockExploreMap extends StatelessWidget {
+  const _MockExploreMap({required this.pois});
+
+  final List<Poi> pois;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(painter: _MockExploreMapPainter(pois)),
+            ),
+            for (final poi in pois)
+              Positioned(
+                left: _mapPoi(poi, size).dx - 11,
+                top: _mapPoi(poi, size).dy - 11,
+                child: _MockPoiMarker(poi: poi),
+              ),
+            Positioned(
+              left: 18,
+              right: 18,
+              bottom: 108,
+              child: _MockMapSummary(pois: pois),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MockPoiMarker extends StatelessWidget {
+  const _MockPoiMarker({required this.poi});
+
+  final Poi poi;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _poiColor(poi.category);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .14),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          constraints: const BoxConstraints(maxWidth: 74),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .9),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            poi.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Color(0xFF2F363A),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MockMapSummary extends StatelessWidget {
+  const _MockMapSummary({required this.pois});
+
+  final List<Poi> pois;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = pois.map((poi) => poi.category).toSet().length;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .92),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.route_rounded, color: Color(0xFF24D391), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Mock map · ${pois.length} POI · $categories categories',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF30363A),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const Icon(Icons.layers_rounded, color: Color(0xFF7E8B92), size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _MockExploreMapPainter extends CustomPainter {
+  const _MockExploreMapPainter(this.pois);
+
+  final List<Poi> pois;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFEAF1EC),
+    );
+
+    final water = Path()
+      ..moveTo(size.width * .72, 0)
+      ..cubicTo(
+        size.width * .98,
+        size.height * .18,
+        size.width * .72,
+        size.height * .42,
+        size.width * .94,
+        size.height * .72,
+      )
+      ..lineTo(size.width, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(water, Paint()..color = const Color(0xFFD7EDF6));
+
+    final parkPaint = Paint()..color = const Color(0xFFD8ECDD);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * .05, size.height * .2, 120, 78),
+        const Radius.circular(24),
+      ),
+      parkPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * .46, size.height * .58, 138, 88),
+        const Radius.circular(26),
+      ),
+      parkPaint,
+    );
+
+    _drawRoadGrid(canvas, size);
+    _drawRoute(canvas, size);
+  }
+
+  void _drawRoadGrid(Canvas canvas, Size size) {
+    final minor = Paint()
+      ..color = const Color(0xFFDCE3E2)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 10; i++) {
+      final y = size.height * (.08 + i * .1);
+      canvas.drawLine(
+        Offset(-20, y),
+        Offset(size.width + 20, y + (i.isEven ? 22 : -16)),
+        minor,
+      );
+    }
+    for (var i = 0; i < 7; i++) {
+      final x = size.width * (.06 + i * .16);
+      canvas.drawLine(
+        Offset(x, -20),
+        Offset(x + 34, size.height + 20),
+        minor,
+      );
+    }
+
+    final highwayShadow = Paint()
+      ..color = const Color(0xFFC9D2D4)
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final highway = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 10
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      ..moveTo(-20, size.height * .72)
+      ..cubicTo(
+        size.width * .2,
+        size.height * .58,
+        size.width * .46,
+        size.height * .62,
+        size.width * .64,
+        size.height * .42,
+      )
+      ..cubicTo(
+        size.width * .78,
+        size.height * .26,
+        size.width * .88,
+        size.height * .2,
+        size.width + 24,
+        size.height * .16,
+      );
+    canvas.drawPath(path, highwayShadow);
+    canvas.drawPath(path, highway);
+  }
+
+  void _drawRoute(Canvas canvas, Size size) {
+    if (pois.length < 2) return;
+
+    final route = Path();
+    for (var i = 0; i < pois.length; i++) {
+      final point = _mapPoi(pois[i], size);
+      if (i == 0) {
+        route.moveTo(point.dx, point.dy);
+      } else {
+        route.lineTo(point.dx, point.dy);
+      }
+    }
+    canvas.drawPath(
+      route,
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 8
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke,
+    );
+    canvas.drawPath(
+      route,
+      Paint()
+        ..color = const Color(0xFF24D391)
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MockExploreMapPainter oldDelegate) =>
+      !listEquals(oldDelegate.pois, pois);
+}
+
+Offset _mapPoi(Poi poi, Size size) {
+  const minLat = 41.785;
+  const maxLat = 41.807;
+  const minLng = 123.425;
+  const maxLng = 123.459;
+  final x = ((poi.longitude - minLng) / (maxLng - minLng)).clamp(.08, .92);
+  final y = (1 - (poi.latitude - minLat) / (maxLat - minLat)).clamp(.16, .86);
+  return Offset(x * size.width, y * size.height);
+}
+
+Color _poiColor(String category) {
+  return switch (category) {
+    'food' => const Color(0xFFFFA629),
+    'hotel' => const Color(0xFF4EA9FF),
+    'shopping' => const Color(0xFFFF6BA6),
+    'transport' => const Color(0xFF7BC69C),
+    _ => const Color(0xFF24D391),
+  };
 }
 
 class _MapFallback extends StatelessWidget {
