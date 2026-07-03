@@ -31,6 +31,17 @@
 
   <title>GoPlan</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    // 高德 Web JS API 配置。
+    // 1. 在高德开放平台申请 Web 端 JS API Key 后，替换 YOUR_AMAP_WEB_KEY。
+    // 2. 2021-12-02 后申请的 Key 通常需要 securityJsCode。
+    // 3. 生产环境建议用安全代理服务转发 securityJsCode，不要直接暴露真实安全密钥。
+    window.goplanAmapConfig = {
+      key: 'YOUR_AMAP_WEB_KEY',
+      securityJsCode: '',
+      serviceHost: ''
+    };
+  </script>
 </head>
 <body>
   <!--
@@ -41,6 +52,15 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => registrations.forEach((registration) => registration.unregister()));
+    }
+    if ('caches' in window) {
+      caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
+    }
+  </script>
+  <script src="flutter_bootstrap.js?v=figma-nav-icons" async></script>
 </body>
 </html>

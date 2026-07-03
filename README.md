@@ -50,8 +50,23 @@ flutter build apk --debug
 | App UI | Flutter / Dart |
 | Android 地图 | 高德地图 SDK (PlatformView) |
 | iOS 地图 | 高德地图 SDK (PlatformView) |
+| Web 地图 | 高德地图 JS API 2.0 |
 | 后端 (规划中) | Go / PostgreSQL / Redis |
 | AI | LLM API + NLP 攻略解析 |
+
+## Web 高德地图配置
+
+Web 端配置位在 `web/index.html` 的 `window.goplanAmapConfig`：
+
+```js
+window.goplanAmapConfig = {
+  key: 'YOUR_AMAP_WEB_KEY',
+  securityJsCode: '',
+  serviceHost: ''
+};
+```
+
+开发时可以临时填写 `securityJsCode`。生产环境建议使用 `serviceHost` 指向后端或网关代理，不要把安全密钥明文放在 Web 客户端。
 
 ## 竞品参考
 

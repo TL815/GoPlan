@@ -7,6 +7,9 @@
 | `AMAP_API_KEY` | Android Manifest 中的高德地图 SDK 占位符 | 客户端 / App 包内 | `android/gradle.properties` 或 `-PAMAP_API_KEY=...` | 在高德控制台轮换并重新构建 App | 当前疑似已提交，应视为已暴露 |
 | `AMAP_IOS_KEY` | iOS 高德地图接入配置 | 客户端 / App 包内 | `ios/Flutter/AMap.xcconfig` | 在高德控制台轮换并重新构建 App | 当前疑似已提交，应视为已暴露 |
 | `_useMockMapPreview` | Flutter 地图渲染路径 | 客户端编译期常量 | `lib/main.dart` | 修改源码并重新构建 | 低风险；控制 Mock 地图与原生地图路径 |
+| `goplanAmapConfig.key` | Web 高德地图 JS API | Web 客户端 | `web/index.html` | 在高德控制台轮换；重新构建 Web | 必须使用 Web/JS API Key，不能复用 Android/iOS Key |
+| `goplanAmapConfig.securityJsCode` | Web 高德 JS API 安全密钥 | Web 客户端，仅开发临时使用 | `web/index.html` | 在高德控制台轮换；重新构建 Web | 明文方式不适合生产环境 |
+| `goplanAmapConfig.serviceHost` | Web 高德 JS API 安全代理地址 | Web 客户端 | `web/index.html` | 由后端/网关配置 | 生产推荐通过代理转发安全密钥 |
 | DeepSeek API Key | 未来 AI 对话模型调用 | 尚未实现；应放在服务端或安全代理中 | 尚未配置 | 在 DeepSeek 控制台轮换 | 接入时不能直接打包到 Flutter 客户端 |
 | Flutter assets 配置 | Flutter 运行时 | 客户端 / App 包内 | `pubspec.yaml` | 不适用 | 低风险 |
 
@@ -20,6 +23,8 @@
 - 尽量移除 committed config 中的本地开发 Key。
 - Android 高德 Key 需要按 package name 和签名证书限制。
 - iOS 高德 Key 需要按 bundle identifier 限制。
+- Web 高德 Key 需要在高德控制台申请 JS API 类型，并配置域名白名单。
+- 生产环境不要把 `securityJsCode` 明文写入 `web/index.html`，应使用 `serviceHost` 指向后端/网关代理。
 - 明确 `_useMockMapPreview` 是否只在 debug/flavor 中开启。
 - 接入 DeepSeek 前，确定 API Key 由后端或安全代理持有，避免写入 Flutter 客户端。
 - 为 DeepSeek 接入补充超时、重试、限流、错误提示和日志策略。

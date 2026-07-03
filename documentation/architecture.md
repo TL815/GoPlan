@@ -11,6 +11,7 @@ GoPlan 是一个旅行规划类 Flutter App 原型，用于展示旅行计划、
 - 探索页：POI 分类筛选和地图区域。
 - 日程、我的页面：占位页。
 - Android/iOS 原生地图桥接骨架，基于 Flutter PlatformView。
+- Web 端高德地图 JS API 接入骨架，基于 Flutter Web `HtmlElementView`。
 - Flutter Mock 地图预览，当前通过 `_useMockMapPreview = true` 启用，用于在 x86_64 模拟器上预览地图和 POI 效果。
 
 ## 关键假设
@@ -28,6 +29,7 @@ GoPlan 是一个旅行规划类 Flutter App 原型，用于展示旅行计划、
 | Android 宿主 | Kotlin, FlutterActivity | `android/app/src/main/kotlin/com/tl815/goplan/MainActivity.kt` |
 | Android 原生地图 | 高德地图 `MapView`, PlatformView | `MainActivity.kt`, `android/app/build.gradle.kts` |
 | iOS 宿主 | Swift, Flutter PlatformView 桥接 | `ios/Runner/AppDelegate.swift`, `ios/Runner/NativeMapView.swift` |
+| Web 地图 | 高德地图 JS API 2.0, Flutter Web `HtmlElementView` | `lib/amap_web_view_web.dart`, `web/index.html` |
 | App 数据 | 静态 demo 常量 | `demoPlans`, `poiCategories`, `demoPois` |
 | 测试 | Flutter widget test 模板 | `test/widget_test.dart` |
 
@@ -68,6 +70,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | Flutter UI 到原生 PlatformView | Flutter -> Android/iOS | POI 列表、地图相机命令 | 仅 App 内部 MethodChannel 调用 |
 | App 到高德地图 SDK | Android 原生 -> AMap | 地图 Key、POI 坐标 | SDK 集成，Key 来自 Gradle 占位符 |
+| Web App 到高德 JS API | Flutter Web -> AMap JSAPI | Web Key、POI 坐标 | Key 来自 `web/index.html` 的 `goplanAmapConfig` |
 | App 到系统权限 | App -> Android/iOS OS | 网络、定位权限声明 | Manifest/Plist 声明；Flutter 层尚未实现运行时权限流程 |
 
 ## 已知风险与假设

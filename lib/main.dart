@@ -2,7 +2,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'ai_travel_agent.dart';
+import 'services/weather_service.dart';
+import 'amap_photo_service_stub.dart'
+    if (dart.library.io) 'amap_photo_service_io.dart';
+import 'amap_web_view_stub.dart'
+    if (dart.library.html) 'amap_web_view_web.dart';
+
 const bool _useMockMapPreview = true;
+const String _planCoverAssetFallback =
+    'assets/images/4b5386239b0a7bb499c00d0c03fa39d4.webp';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -377,7 +386,10 @@ class HomePage extends StatelessWidget {
           ...demoPlans.map(
             (plan) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: PlanCard(plan: plan),
+              child: PlanCard(
+                plan: plan,
+                onTap: () => _openPlanDetail(context, plan),
+              ),
             ),
           ),
         ],
@@ -386,20 +398,29 @@ class HomePage extends StatelessWidget {
   }
 }
 
+void _openPlanDetail(BuildContext context, TravelPlan plan) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) => PlanDetailDrawer(plan: plan),
+  );
+}
+
 class _HomeTopSection extends StatelessWidget {
   const _HomeTopSection();
 
   @override
   Widget build(BuildContext context) {
     return const SizedBox(
-      height: 228,
+      height: 196,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned(left: 0, right: 0, top: 0, child: _HomeHeader()),
-          Positioned(left: 0, right: 0, top: 42, child: _WeatherPanel()),
-          Positioned(left: 0, right: 0, top: 104, child: _PhotoStrip()),
-          Positioned(left: 0, right: 0, top: 96, child: _AiDialogBar()),
+          Positioned(left: 0, right: 0, top: 88, child: _PhotoStrip()),
+          Positioned(left: 0, right: 0, top: 66, child: _AiDialogBar()),
           Positioned(left: 0, right: 0, bottom: 8, child: _TopDivider()),
         ],
       ),
@@ -425,9 +446,7 @@ class _HomeHeader extends StatelessWidget {
       children: [
         const CircleAvatar(
           radius: 20,
-          backgroundImage: NetworkImage(
-            'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
-          ),
+          backgroundImage: AssetImage('assets/images/我的.png'),
         ),
         const SizedBox(width: 10),
         const Expanded(
@@ -454,6 +473,8 @@ class _HomeHeader extends StatelessWidget {
             ],
           ),
         ),
+        const _WeatherSummary(),
+        const SizedBox(width: 10),
         IconButton.filled(
           onPressed: () {},
           style: IconButton.styleFrom(
@@ -467,33 +488,81 @@ class _HomeHeader extends StatelessWidget {
   }
 }
 
-class _WeatherPanel extends StatelessWidget {
-  const _WeatherPanel();
+class _WeatherSummary extends StatefulWidget {
+  const _WeatherSummary();
+
+  @override
+  State<_WeatherSummary> createState() => _WeatherSummaryState();
+}
+
+class _WeatherSummaryState extends State<_WeatherSummary> {
+  WeatherData? _weather;
+  bool _loading = true;
+
+  // 默认城市编码：沈阳（可在设置中切换）
+  static const String _defaultAdcode = '210100';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+  }
+
+  Future<void> _loadWeather() async {
+    final data = await WeatherService.fetchWeather(_defaultAdcode);
+    if (mounted) {
+      setState(() {
+        _weather = data;
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 76,
-      child: Row(
+    // 加载中显示骨架
+    if (_loading) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset(
-            'assets/images/Group 9.png',
-            width: 150,
-            fit: BoxFit.contain,
-          ),
-          const Spacer(),
-          const Text(
-            '21℃~36℃',
-            style: TextStyle(
-              fontSize: 13,
-              color: Color(0xFF8D8D8D),
-              fontWeight: FontWeight.w800,
+          Container(
+            width: 60,
+            height: 12,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0E0E0),
+              borderRadius: BorderRadius.circular(4),
             ),
           ),
-          const SizedBox(width: 14),
-          Image.asset('assets/images/晴天.png', width: 36),
+          const SizedBox(width: 8),
+          Container(
+            width: 30,
+            height: 30,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE0E0E0),
+              shape: BoxShape.circle,
+            ),
+          ),
         ],
-      ),
+      );
+    }
+
+    final tempText = _weather?.temperatureRange ?? '21℃~36℃';
+    final iconAsset = _weather?.weatherIconAsset ?? 'assets/icons/晴天.png';
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          tempText,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF8D8D8D),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Image.asset(iconAsset, width: 30),
+      ],
     );
   }
 }
@@ -509,30 +578,43 @@ class _AiDialogBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         onTap: () => _openAiChat(context),
         child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          height: 46,
+          padding: const EdgeInsets.only(left: 12, right: 13),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x11000000),
-                blurRadius: 18,
-                offset: Offset(0, 8),
+                color: Color(0x18000000),
+                blurRadius: 22,
+                offset: Offset(0, 10),
+              ),
+              BoxShadow(
+                color: Color(0x0A000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
               ),
             ],
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded, color: Color(0xFF4C4C4C)),
-              SizedBox(width: 12),
-              Expanded(
+              Image.asset('assets/images/ai.png', width: 38, height: 38),
+              const SizedBox(width: 10),
+              const Expanded(
                 child: Text(
-                  '和 GoPlan AI 聊聊你的旅行想法',
+                  '聊聊你的旅行想法',
                   style: TextStyle(color: Color(0xFF8F8F8F), fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Icon(Icons.keyboard_voice_outlined, color: Color(0xFF4C4C4C)),
+              const SizedBox(width: 10),
+              Container(width: 1, height: 22, color: const Color(0xFFE7E7E7)),
+              const SizedBox(width: 10),
+              const Icon(
+                Icons.keyboard_voice_outlined,
+                color: Color(0xFF4C4C4C),
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -541,32 +623,25 @@ class _AiDialogBar extends StatelessWidget {
   }
 
   void _openAiChat(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const _AiChatSheet(),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const _AiChatPage()));
   }
 }
 
-class _AiChatSheet extends StatefulWidget {
-  const _AiChatSheet();
+class _AiChatPage extends StatefulWidget {
+  const _AiChatPage();
 
   @override
-  State<_AiChatSheet> createState() => _AiChatSheetState();
+  State<_AiChatPage> createState() => _AiChatPageState();
 }
 
-class _AiChatSheetState extends State<_AiChatSheet> {
+class _AiChatPageState extends State<_AiChatPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<_AiChatMessage> _messages = [
-    const _AiChatMessage(
-      role: _AiChatRole.assistant,
-      text: '你好，我是 GoPlan AI。你可以告诉我想去哪、几天、和谁去，我会先帮你整理成行程思路。',
-    ),
-  ];
+  final AiTravelAgent _agent = createAiTravelAgent();
+  final List<_AiChatMessage> _messages = [];
+  final List<AiTravelAgentTurn> _agentHistory = [];
   bool _isThinking = false;
 
   @override
@@ -587,28 +662,47 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     });
     _scrollToBottom();
 
-    final reply = await _mockDeepSeekReply(text);
-    if (!mounted) return;
-
-    setState(() {
-      _messages.add(_AiChatMessage(role: _AiChatRole.assistant, text: reply));
-      _isThinking = false;
-    });
+    try {
+      final history = List<AiTravelAgentTurn>.of(_agentHistory);
+      final plan = await _agent.planTrip(text, history: history);
+      if (!mounted) return;
+      final assistantText = plan.toChatText();
+      setState(() {
+        _messages.add(
+          _AiChatMessage(
+            role: _AiChatRole.assistant,
+            text: assistantText,
+            plan: plan,
+          ),
+        );
+        _agentHistory
+          ..add(AiTravelAgentTurn(role: AiTravelAgentRole.user, content: text))
+          ..add(
+            AiTravelAgentTurn(
+              role: AiTravelAgentRole.assistant,
+              content: assistantText,
+            ),
+          );
+        _isThinking = false;
+      });
+    } on AiTravelAgentException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(role: _AiChatRole.assistant, text: error.message),
+        );
+        _isThinking = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(role: _AiChatRole.assistant, text: 'AI 规划失败：$error'),
+        );
+        _isThinking = false;
+      });
+    }
     _scrollToBottom();
-  }
-
-  Future<String> _mockDeepSeekReply(String prompt) async {
-    await Future<void>.delayed(const Duration(milliseconds: 650));
-    if (prompt.contains('川西') || prompt.contains('雪山')) {
-      return '可以先按 6 天小团路线规划：成都集合，康定适应海拔，新都桥拍摄，塔公草原看雪山，最后回成都。我后续接入 DeepSeek 后，可以继续生成每日路线、预算和 POI。';
-    }
-    if (prompt.contains('杭州') || prompt.contains('周末')) {
-      return '周末游建议控制在 2-3 个核心区域：西湖、灵隐、河坊街。第一天慢逛城市风景，第二天留给茶园或博物馆，会比较松弛。';
-    }
-    if (prompt.contains('云南') || prompt.contains('毕业')) {
-      return '毕业旅行适合做成 8-9 天：昆明落地，大理放松，丽江古城和玉龙雪山，再去香格里拉。重点是减少搬运行李的频率。';
-    }
-    return '我先记下这个想法。可以继续补充出发城市、旅行天数、预算、人群和偏好的节奏，我会把它整理成可执行的行程草案。';
   }
 
   void _scrollToBottom() {
@@ -625,178 +719,204 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: DraggableScrollableSheet(
-        initialChildSize: .82,
-        minChildSize: .5,
-        maxChildSize: .94,
-        builder: (context, sheetController) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFF7F8F7),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 42,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD8DCDC),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8F7),
+      body: SafeArea(
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: Column(
+            children: [
+              const _AiChatHeader(),
+              const _AiChatModeDivider(label: '真实 AI 旅行路线规划'),
+              Expanded(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
+                  children: [
+                    if (_messages.isEmpty && !_isThinking)
+                      _AiChatEmptyState(onPromptSelected: _send),
+                    for (final message in _messages)
+                      _AiMessageBubble(message: message),
+                    if (_isThinking) const _AiThinkingBubble(),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 10, 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF111111),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.auto_awesome_rounded,
-                          color: Color(0xFF28D99A),
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'GoPlan AI',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              '本地 Mock 对话 · 预留 DeepSeek 接入',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF8C8C8C),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  height: 38,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    children: [
-                      _AiSuggestionChip(
-                        text: '帮我规划川西 6 天',
-                        onTap: () => _send('帮我规划川西雪山小团 6 天'),
-                      ),
-                      _AiSuggestionChip(
-                        text: '杭州周末怎么安排',
-                        onTap: () => _send('杭州情侣周末游怎么安排'),
-                      ),
-                      _AiSuggestionChip(
-                        text: '云南毕业旅行',
-                        onTap: () => _send('云南朋友毕业旅行 9 天'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
-                    itemCount: _messages.length + (_isThinking ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (_isThinking && index == _messages.length) {
-                        return const _AiThinkingBubble();
-                      }
-                      return _AiMessageBubble(message: _messages[index]);
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          minLines: 1,
-                          maxLines: 4,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _send(),
-                          decoration: InputDecoration(
-                            hintText: '输入你的旅行想法...',
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 13,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(22),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      IconButton.filled(
-                        onPressed: _isThinking ? null : () => _send(),
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFF111111),
-                          disabledBackgroundColor: const Color(0xFFBFC4C2),
-                          foregroundColor: Colors.white,
-                        ),
-                        icon: const Icon(Icons.arrow_upward_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+              ),
+              _AiChatInput(
+                controller: _controller,
+                enabled: !_isThinking,
+                onSend: _send,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _AiSuggestionChip extends StatelessWidget {
-  const _AiSuggestionChip({required this.text, required this.onTap});
+class _AiChatHeader extends StatelessWidget {
+  const _AiChatHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 66,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back_rounded, size: 24),
+              color: const Color(0xFF202326),
+            ),
+            const SizedBox(width: 4),
+            const Expanded(
+              child: Text(
+                'GoPlan AI 旅行规划',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF151515),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.edit_outlined, size: 22),
+              color: const Color(0xFF202326),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.more_vert_rounded, size: 23),
+              color: const Color(0xFF202326),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiChatModeDivider extends StatelessWidget {
+  const _AiChatModeDivider({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(color: Color(0xFFE4E4E4))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFFB3B3B3),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider(color: Color(0xFFE4E4E4))),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiChatEmptyState extends StatelessWidget {
+  const _AiChatEmptyState({required this.onPromptSelected});
+
+  final ValueChanged<String> onPromptSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 28, bottom: 18),
+      child: Column(
+        children: [
+          const _AiOrb(size: 46),
+          const SizedBox(height: 18),
+          const Text(
+            '告诉我你的旅行想法',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF151515),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '我会调用真实 AI Agent，生成可执行的每日路线、交通、美食和注意事项。',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: Color(0xFF858B8D),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 22),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              _AiPromptChip(
+                text: '川西雪山 6 天',
+                onTap: () =>
+                    onPromptSelected('从成都出发，帮我规划川西雪山小环线 6 天，节奏舒适，适合第一次去。'),
+              ),
+              _AiPromptChip(
+                text: '杭州周末情侣游',
+                onTap: () => onPromptSelected('帮我规划杭州 2 天情侣周末游，想要西湖、咖啡、轻松拍照。'),
+              ),
+              _AiPromptChip(
+                text: '云南毕业旅行',
+                onTap: () =>
+                    onPromptSelected('帮我规划云南 8 天毕业旅行，4 个人，喜欢美食、古城和自然风景。'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiPromptChip extends StatelessWidget {
+  const _AiPromptChip({required this.text, required this.onTap});
 
   final String text;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ActionChip(
-        onPressed: onTap,
-        label: Text(text),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        backgroundColor: Colors.white,
-        side: const BorderSide(color: Color(0xFFE8ECEA)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF343738),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -810,37 +930,172 @@ class _AiMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == _AiChatRole.user;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * .74,
+    final bubble = message.plan == null
+        ? _AiTextBubble(message: message)
+        : _AiPlanBubble(plan: message.plan!);
+
+    if (isUser) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 18),
+          child: bubble,
         ),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          color: isUser ? const Color(0xFF111111) : Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(isUser ? 18 : 6),
-            bottomRight: Radius.circular(isUser ? 6 : 18),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _AiOrb(size: 20),
+          const SizedBox(width: 10),
+          Flexible(child: bubble),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiTextBubble extends StatelessWidget {
+  const _AiTextBubble({required this.message});
+
+  final _AiChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * .7,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .05),
-              blurRadius: 12,
-              offset: const Offset(0, 5),
+        ],
+      ),
+      child: Text(
+        message.text,
+        style: const TextStyle(
+          color: Color(0xFF202426),
+          fontSize: 14,
+          height: 1.42,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _AiPlanBubble extends StatelessWidget {
+  const _AiPlanBubble({required this.plan});
+
+  final TravelAgentResult plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * .74,
+      ),
+      padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${plan.destination} · ${plan.durationDays} 天',
+            style: const TextStyle(
+              color: Color(0xFF151515),
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            plan.summary,
+            style: const TextStyle(
+              color: Color(0xFF5F6669),
+              fontSize: 13,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final day in plan.days)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _AiPlanDayRow(day: day),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiPlanDayRow extends StatelessWidget {
+  const _AiPlanDayRow({required this.day});
+
+  final TravelAgentDay day;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8F7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'D${day.day} ${day.title}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF202426),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              day.route,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: Color(0xFF636B6E),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              day.transport,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.35,
+                color: Color(0xFF8A9294),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
-        ),
-        child: Text(
-          message.text,
-          style: TextStyle(
-            color: isUser ? Colors.white : const Color(0xFF242A2D),
-            fontSize: 14,
-            height: 1.38,
-          ),
         ),
       ),
     );
@@ -852,23 +1107,129 @@ class _AiThinkingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: 10),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-          ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-            child: Text(
-              'GoPlan AI 正在整理...',
-              style: TextStyle(fontSize: 14, color: Color(0xFF7D8588)),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        children: [
+          const _AiOrb(size: 20),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x12000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: const Text(
+              'AI 正在整理  •••',
+              style: TextStyle(fontSize: 14, color: Color(0xFF8A8F91)),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiChatInput extends StatelessWidget {
+  const _AiChatInput({
+    required this.controller,
+    required this.enabled,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+      child: Container(
+        height: 54,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(27),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 16,
+              offset: Offset(0, 6),
+            ),
+          ],
         ),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.attach_file_rounded, size: 20),
+              color: const Color(0xFF4A4D50),
+            ),
+            Container(width: 1, height: 24, color: const Color(0xFFE8E8E8)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                enabled: enabled,
+                controller: controller,
+                minLines: 1,
+                maxLines: 1,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => onSend(),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '问我任何旅行问题...',
+                  hintStyle: TextStyle(
+                    color: Color(0xFF9B9FA1),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: enabled ? onSend : null,
+              icon: const Icon(Icons.keyboard_voice_outlined, size: 21),
+              color: const Color(0xFF4A4D50),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiOrb extends StatelessWidget {
+  const _AiOrb({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          center: Alignment(-.35, -.35),
+          radius: .9,
+          colors: [Color(0xFFE7FFF0), Color(0xFF6DE58E), Color(0xFF17B95A)],
+          stops: [0, .48, 1],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x3317B95A),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
     );
   }
@@ -877,10 +1238,11 @@ class _AiThinkingBubble extends StatelessWidget {
 enum _AiChatRole { user, assistant }
 
 class _AiChatMessage {
-  const _AiChatMessage({required this.role, required this.text});
+  const _AiChatMessage({required this.role, required this.text, this.plan});
 
   final _AiChatRole role;
   final String text;
+  final TravelAgentResult? plan;
 }
 
 class _PhotoStrip extends StatelessWidget {
@@ -888,41 +1250,490 @@ class _PhotoStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const photos = [
-      'photo-1.png',
-      'photo-2.png',
-      'photo-3.png',
-      'photo-4.png',
-      'photo-5.png',
-      'photo-6.png',
-      'photo-7.png',
-    ];
-    return SizedBox(
-      height: 86,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (var i = 0; i < photos.length; i++)
-            Positioned(
-              left: 22 + i * 43.0,
-              top: i.isEven ? 22 : 14,
-              child: Transform.rotate(
-                angle: (i.isEven ? -1 : 1) * 0.07,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.asset(
-                    'assets/images/${photos[i]}',
-                    width: 56,
-                    height: 56,
-                    fit: BoxFit.cover,
+    return FutureBuilder<List<_HomePhotoItem>>(
+      future: _fetchHomePhotoStripItems(),
+      builder: (context, snapshot) {
+        final isLoading = snapshot.connectionState != ConnectionState.done;
+        if (isLoading && !snapshot.hasData) {
+          return const _PhotoStripLoading();
+        }
+
+        final photos = snapshot.data ?? const [];
+        return _PhotoStripStack(
+          photos: photos.isEmpty ? _fallbackHomePhotoItems : photos,
+        );
+      },
+    );
+  }
+}
+
+class _PhotoStripLoading extends StatelessWidget {
+  const _PhotoStripLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const count = 6;
+        const cardWidth = 60.0;
+        const cardHeight = 58.0;
+        const step = 50.0;
+        const totalWidth = cardWidth + step * (count - 1);
+        final leftBase = ((constraints.maxWidth - totalWidth) / 2).clamp(
+          10.0,
+          28.0,
+        );
+
+        return SizedBox(
+          height: 92,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < count; i++)
+                Positioned(
+                  left: leftBase + i * step,
+                  top: _photoTop(i),
+                  child: Transform.rotate(
+                    angle: _photoAngle(i),
+                    child: Container(
+                      width: cardWidth,
+                      height: cardHeight,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x18000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDEDED),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PhotoStripStack extends StatelessWidget {
+  const _PhotoStripStack({required this.photos});
+
+  final List<_HomePhotoItem> photos;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final visiblePhotos = photos.take(6).toList(growable: false);
+        const cardWidth = 60.0;
+        const step = 50.0;
+        final totalWidth = cardWidth + step * (visiblePhotos.length - 1);
+        final leftBase = ((constraints.maxWidth - totalWidth) / 2).clamp(
+          10.0,
+          28.0,
+        );
+
+        return SizedBox(
+          height: 92,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < visiblePhotos.length; i++)
+                Positioned(
+                  left: leftBase + i * step,
+                  top: _photoTop(i),
+                  child: Transform.rotate(
+                    angle: _photoAngle(i),
+                    child: _HomePhotoCard(item: visiblePhotos[i]),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HomePhotoCard extends StatelessWidget {
+  const _HomePhotoCard({required this.item});
+
+  final _HomePhotoItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(13),
+        onTap: () => _showHomePhotoSpotSheet(context, item: item),
+        child: Container(
+          width: 60,
+          height: 58,
+          padding: const EdgeInsets.all(2),
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 12,
+                offset: Offset(0, 5),
               ),
-            ),
-        ],
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            clipBehavior: Clip.antiAlias,
+            child: item.isNetwork
+                ? Image.network(
+                    item.image,
+                    width: 60,
+                    height: 54,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, _, _) =>
+                        const _AmapImageErrorPlaceholder(compact: true),
+                  )
+                : Image.asset(
+                    item.image,
+                    width: 60,
+                    height: 54,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                  ),
+          ),
+        ),
       ),
     );
   }
+}
+
+class _AmapImageErrorPlaceholder extends StatelessWidget {
+  const _AmapImageErrorPlaceholder({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xFFEAF1EC),
+      child: Center(
+        child: compact
+            ? const Icon(
+                Icons.cloud_off_outlined,
+                size: 18,
+                color: Color(0xFF8AA096),
+              )
+            : const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    size: 30,
+                    color: Color(0xFF8AA096),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '高德图片加载失败',
+                    style: TextStyle(
+                      color: Color(0xFF7C8B85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+void _showHomePhotoSpotSheet(
+  BuildContext context, {
+  required _HomePhotoItem item,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) => _HomePhotoSpotSheet(item: item),
+  );
+}
+
+class _HomePhotoSpotSheet extends StatefulWidget {
+  const _HomePhotoSpotSheet({required this.item});
+
+  final _HomePhotoItem item;
+
+  @override
+  State<_HomePhotoSpotSheet> createState() => _HomePhotoSpotSheetState();
+}
+
+class _HomePhotoSpotSheetState extends State<_HomePhotoSpotSheet> {
+  late final DraggableScrollableController _controller;
+  bool _isFullScreen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = DraggableScrollableController()..addListener(_handleChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_handleChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleChanged() {
+    final next = _controller.size > .92;
+    if (next != _isFullScreen) setState(() => _isFullScreen = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      controller: _controller,
+      initialChildSize: .62,
+      minChildSize: .42,
+      maxChildSize: 1,
+      expand: false,
+      snap: true,
+      snapSizes: const [.62, 1],
+      builder: (context, scrollController) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(14, 0, 14, _isFullScreen ? 0 : 14),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F8F7),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(_isFullScreen ? 0 : 30),
+                bottom: Radius.circular(_isFullScreen ? 0 : 30),
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x24000000),
+                  blurRadius: 28,
+                  offset: Offset(0, 14),
+                ),
+              ],
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+              children: [
+                const _SheetDragHandle(),
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: SizedBox(
+                        height: 180,
+                        width: double.infinity,
+                        child: widget.item.isNetwork
+                            ? Image.network(
+                                widget.item.image,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.high,
+                                errorBuilder: (_, _, _) =>
+                                    const _AmapImageErrorPlaceholder(),
+                              )
+                            : Image.asset(widget.item.image, fit: BoxFit.cover),
+                      ),
+                    ),
+                    if (_isFullScreen)
+                      Positioned(
+                        right: 12,
+                        top: 12,
+                        child: IconButton.filled(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(
+                              alpha: .92,
+                            ),
+                            foregroundColor: const Color(0xFF222222),
+                          ),
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.item.spot.name,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF111111),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 15,
+                      color: Color(0xFF8C9490),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.item.spot.city,
+                      style: const TextStyle(
+                        color: Color(0xFF7D8581),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final tag in widget.item.spot.tags)
+                      _SpotTag(label: tag),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.item.spot.description,
+                  style: const TextStyle(
+                    color: Color(0xFF555E5A),
+                    fontSize: 14,
+                    height: 1.55,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE8FFF3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.tips_and_updates_outlined,
+                          size: 17,
+                          color: Color(0xFF18C777),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          widget.item.spot.tip,
+                          style: const TextStyle(
+                            color: Color(0xFF5E6662),
+                            fontSize: 13,
+                            height: 1.45,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SheetDragHandle extends StatelessWidget {
+  const _SheetDragHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 10),
+      child: Center(
+        child: Container(
+          width: 38,
+          height: 5,
+          decoration: BoxDecoration(
+            color: const Color(0xFFDDE1E0),
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpotTag extends StatelessWidget {
+  const _SpotTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAFBF2),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF19B96D),
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+double _photoTop(int index) {
+  const tops = [8.0, 1.0, 5.0, 0.0, 7.0, 3.0];
+  return tops[index % tops.length];
+}
+
+double _photoAngle(int index) {
+  const angles = [-0.08, 0.05, -0.04, 0.06, -0.05, 0.04];
+  return angles[index % angles.length];
 }
 
 class _PlanFilters extends StatelessWidget {
@@ -950,70 +1761,1614 @@ class _PlanFilters extends StatelessWidget {
 }
 
 class PlanCard extends StatelessWidget {
-  const PlanCard({super.key, required this.plan});
+  const PlanCard({super.key, required this.plan, this.onTap});
+
+  final TravelPlan plan;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 122),
+          padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x18000000),
+                blurRadius: 22,
+                offset: Offset(0, 10),
+              ),
+              BoxShadow(
+                color: Color(0x08000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      plan.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _StatusChip(plan: plan),
+                    const SizedBox(height: 8),
+                    Text(
+                      plan.dateRange,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFA4A4A4),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _Metric(
+                          icon: Icons.map_outlined,
+                          value: '${plan.places}',
+                        ),
+                        const SizedBox(width: 22),
+                        _Metric(
+                          icon: Icons.people_outline,
+                          value: '${plan.members}',
+                        ),
+                        const SizedBox(width: 22),
+                        _Metric(
+                          icon: Icons.calendar_today_outlined,
+                          value: '${plan.days}',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              RoutePreview(plan: plan),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+const _fallbackHomePhotos = [
+  'assets/images/photo-1.png',
+  'assets/images/photo-2.png',
+  'assets/images/photo-3.png',
+  'assets/images/photo-4.png',
+  'assets/images/photo-5.png',
+  'assets/images/photo-6.png',
+  'assets/images/photo-7.png',
+];
+
+List<_HomePhotoItem> get _fallbackHomePhotoItems {
+  return List<_HomePhotoItem>.generate(
+    _fallbackHomePhotos.length,
+    (index) => _HomePhotoItem(
+      image: _fallbackHomePhotos[index],
+      fallbackImage: _fallbackHomePhotos[index],
+      spot: _homePhotoSpots[index % _homePhotoSpots.length],
+      isNetwork: false,
+    ),
+    growable: false,
+  );
+}
+
+const _homePhotoSpots = [
+  _HomePhotoSpot(
+    name: '世纪公园',
+    city: '上海 · 浦东新区',
+    tags: ['城市绿地', '散步', '亲子友好'],
+    description: '世纪公园是浦东中心城区里很适合慢逛的开放式绿地，湖面、林荫路和草坪空间都很舒展，适合安排在城市行程的轻松半天。',
+    tip: '建议上午或傍晚前往，光线更柔和；可以和世纪大道、陆家嘴一带串成一条轻量城市漫步路线。',
+  ),
+  _HomePhotoSpot(
+    name: '外滩万国建筑群',
+    city: '上海 · 黄浦区',
+    tags: ['夜景', '建筑', '经典地标'],
+    description: '外滩是上海最具代表性的城市界面，一侧是历史建筑群，另一侧隔江望向陆家嘴天际线，适合第一次到上海的游客作为城市印象起点。',
+    tip: '傍晚到夜间体验最好。想避开人流，可以从外白渡桥方向慢慢走到十六铺码头。',
+  ),
+  _HomePhotoSpot(
+    name: '陆家嘴天际线',
+    city: '上海 · 浦东新区',
+    tags: ['城市摄影', '观景', '地标'],
+    description: '陆家嘴聚集了东方明珠、上海中心、金茂大厦等高层地标，适合安排观景台、滨江步道和商圈休整。',
+    tip: '如果时间紧，可以把陆家嘴滨江和外滩放在同一天，形成一条黄浦江两岸对望路线。',
+  ),
+  _HomePhotoSpot(
+    name: '东方明珠',
+    city: '上海 · 浦东新区',
+    tags: ['观景台', '亲子', '夜景'],
+    description: '东方明珠是上海辨识度最高的城市地标之一，适合登高看黄浦江弯道，也适合在周边拍摄城市夜景。',
+    tip: '登塔建议提前预约；如果只想拍照，陆家嘴环岛和滨江步道就能获得不错视角。',
+  ),
+  _HomePhotoSpot(
+    name: '苏州河城市漫步',
+    city: '上海 · 静安/虹口',
+    tags: ['慢行', '咖啡', '历史街区'],
+    description: '苏州河沿线适合低强度城市漫步，桥梁、仓库改造空间和咖啡小店密集，节奏比热门景点更松弛。',
+    tip: '可以从四行仓库出发，沿河走到外白渡桥，再接外滩夜景，路线衔接自然。',
+  ),
+  _HomePhotoSpot(
+    name: '武康路街区',
+    city: '上海 · 徐汇区',
+    tags: ['梧桐街道', 'Citywalk', '拍照'],
+    description: '武康路街区以梧桐树、老洋房和小型店铺构成轻松的城市漫步氛围，适合安排在下午慢慢逛。',
+    tip: '周末人流较多，建议工作日上午或傍晚去；路线可串联安福路、湖南路和徐家汇公园。',
+  ),
+];
+
+class _HomePhotoSpot {
+  const _HomePhotoSpot({
+    required this.name,
+    required this.city,
+    required this.tags,
+    required this.description,
+    required this.tip,
+  });
+
+  final String name;
+  final String city;
+  final List<String> tags;
+  final String description;
+  final String tip;
+}
+
+class _HomePhotoItem {
+  const _HomePhotoItem({
+    required this.image,
+    required this.fallbackImage,
+    required this.spot,
+    required this.isNetwork,
+  });
+
+  final String image;
+  final String fallbackImage;
+  final _HomePhotoSpot spot;
+  final bool isNetwork;
+}
+
+Future<List<_HomePhotoItem>> _fetchHomePhotoStripItems() async {
+  const keywords = ['世纪公园', '外滩', '陆家嘴', '东方明珠', '苏州河', '武康路'];
+  final results = await Future.wait(
+    keywords.map(
+      (keyword) => fetchAmapPhotoSpots(keyword: keyword, city: '上海'),
+    ),
+  );
+  final fallbackItems = _fallbackHomePhotoItems;
+  return results
+      .expand((spots) => spots)
+      .take(6)
+      .indexed
+      .map((entry) {
+        final index = entry.$1;
+        final spot = entry.$2;
+        final fallback = fallbackItems[index % fallbackItems.length];
+        return _HomePhotoItem(
+          image: spot.photoUrl,
+          fallbackImage: fallback.fallbackImage,
+          spot: _homePhotoSpotFromAmap(spot),
+          isNetwork: true,
+        );
+      })
+      .toList(growable: false);
+}
+
+_HomePhotoSpot _homePhotoSpotFromAmap(AmapPhotoSpot spot) {
+  final address = spot.address.isEmpty ? spot.city : spot.address;
+  final tags = spot.tags
+      .map(_compactAmapTag)
+      .where((tag) => tag.isNotEmpty)
+      .take(3)
+      .toList(growable: false);
+  return _HomePhotoSpot(
+    name: spot.name,
+    city: spot.city,
+    tags: tags.isEmpty ? const ['旅行灵感'] : tags,
+    description:
+        '${spot.name}位于${address.isEmpty ? spot.city : address}，是高德 POI 推荐的旅行地点。这里适合加入城市探索路线，作为拍照、散步或短暂停留的节点。',
+    tip: '图片、名称和位置均来自高德 POI。建议结合附近交通与开放时间，把它安排在同区域行程中，减少折返。',
+  );
+}
+
+String _compactAmapTag(String value) {
+  final parts = value.split(';').where((item) => item.trim().isNotEmpty);
+  final last = parts.isEmpty ? value : parts.last;
+  return last.replaceAll('相关地点', '').trim();
+}
+
+class PlanDetailDrawer extends StatefulWidget {
+  const PlanDetailDrawer({super.key, required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  State<PlanDetailDrawer> createState() => _PlanDetailDrawerState();
+}
+
+class _PlanDetailDrawerState extends State<PlanDetailDrawer> {
+  late final DraggableScrollableController _sheetController;
+  bool _isFullScreen = false;
+  bool _isPromotingToPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheetController = DraggableScrollableController()
+      ..addListener(_handleSheetChanged);
+  }
+
+  @override
+  void dispose() {
+    _sheetController
+      ..removeListener(_handleSheetChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleSheetChanged() {
+    if (_sheetController.size > .955 && !_isPromotingToPage) {
+      _isPromotingToPage = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => PlanDetailFullPage(plan: widget.plan),
+          ),
+        );
+      });
+      return;
+    }
+
+    final nextFullScreen = _sheetController.size > .985;
+    if (nextFullScreen != _isFullScreen) {
+      setState(() => _isFullScreen = nextFullScreen);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      controller: _sheetController,
+      initialChildSize: .88,
+      minChildSize: .46,
+      maxChildSize: 1,
+      expand: false,
+      snap: true,
+      snapSizes: const [.88, 1],
+      builder: (context, scrollController) => Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F8F7),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(_isFullScreen ? 0 : 30),
+          ),
+        ),
+        child: _PlanDetailContent(
+          plan: widget.plan,
+          controller: scrollController,
+          showHandle: true,
+          onClose: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
+}
+
+class PlanDetailFullPage extends StatelessWidget {
+  const PlanDetailFullPage({super.key, required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F3F3),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _PlanDetailTopBar(
+              title: plan.title,
+              onClose: () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              child: _PlanDetailContent(
+                plan: plan,
+                showHandle: false,
+                onClose: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanDetailTopBar extends StatelessWidget {
+  const _PlanDetailTopBar({required this.title, required this.onClose});
+
+  final String title;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 54,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF111111),
+                ),
+              ),
+            ),
+            IconButton.filled(
+              onPressed: onClose,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF111111),
+              ),
+              icon: const Icon(Icons.close_rounded, size: 20),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanDetailContent extends StatelessWidget {
+  const _PlanDetailContent({
+    required this.plan,
+    required this.showHandle,
+    required this.onClose,
+    this.controller,
+  });
+
+  final TravelPlan plan;
+  final ScrollController? controller;
+  final bool showHandle;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      controller: controller,
+      padding: EdgeInsets.fromLTRB(18, showHandle ? 0 : 6, 18, 28),
+      children: [
+        if (showHandle) ...[const _SheetDragHandle()],
+        _PlanCover(plan: plan),
+        const SizedBox(height: 16),
+        const _PlanTags(),
+        const SizedBox(height: 14),
+        Text(
+          '${plan.title} · ${plan.days}天',
+          style: const TextStyle(
+            fontSize: 22,
+            height: 1.16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+            color: Color(0xFF141414),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            _PlanMeta(
+              icon: Icons.payments_outlined,
+              text: '¥${plan.days * 320} 人均',
+            ),
+            const SizedBox(width: 18),
+            _PlanMeta(icon: Icons.map_outlined, text: '${plan.places} 个地点'),
+            const SizedBox(width: 18),
+            _PlanMeta(
+              icon: Icons.calendar_month_outlined,
+              text: _planDateRangeLabel(plan),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        const Divider(height: 1, color: Color(0xFFE5E5E5)),
+        const SizedBox(height: 18),
+        Text(
+          _planDetailDescription(plan),
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.7,
+            color: Color(0xFF747474),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 22),
+        _PlanMiniMapCard(plan: plan),
+        const SizedBox(height: 18),
+        _PlanRouteInlineSection(plan: plan),
+        const SizedBox(height: 18),
+        _DetailTipCard(plan: plan),
+        const SizedBox(height: 18),
+        _PlanStartBar(plan: plan),
+      ],
+    );
+  }
+}
+
+class _PlanCover extends StatelessWidget {
+  const _PlanCover({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: AspectRatio(
+        aspectRatio: 1.78,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [_AmapPlanCoverImage(plan: plan)],
+        ),
+      ),
+    );
+  }
+}
+
+class _AmapPlanCoverImage extends StatelessWidget {
+  const _AmapPlanCoverImage({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallbackUrls = [_planCoverAsset(plan)];
+    return FutureBuilder<List<String>>(
+      future: fetchAmapPhotoUrls(
+        keyword: _planCoverKeyword(plan),
+        city: _planCoverCity(plan),
+      ),
+      builder: (context, snapshot) {
+        final isLoading = snapshot.connectionState != ConnectionState.done;
+        if (isLoading && !snapshot.hasData) {
+          return const _PlanCoverLoading();
+        }
+
+        final urls = snapshot.data?.isNotEmpty == true
+            ? snapshot.data!
+            : fallbackUrls;
+        return _PlanCoverCarousel(
+          urls: urls,
+          isNetwork: snapshot.data?.isNotEmpty == true,
+        );
+      },
+    );
+  }
+}
+
+class _PlanCoverLoading extends StatelessWidget {
+  const _PlanCoverLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFEDEDED),
+      child: Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanCoverCarousel extends StatefulWidget {
+  const _PlanCoverCarousel({required this.urls, required this.isNetwork});
+
+  final List<String> urls;
+  final bool isNetwork;
+
+  @override
+  State<_PlanCoverCarousel> createState() => _PlanCoverCarouselState();
+}
+
+class _PlanCoverCarouselState extends State<_PlanCoverCarousel> {
+  late final PageController _controller;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlanCoverCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.urls != widget.urls) {
+      _index = 0;
+      if (_controller.hasClients) _controller.jumpToPage(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _controller,
+          itemCount: widget.urls.length,
+          onPageChanged: (index) => setState(() => _index = index),
+          itemBuilder: (context, index) {
+            final url = widget.urls[index];
+            if (!widget.isNetwork) {
+              return Image.asset(url, fit: BoxFit.cover);
+            }
+            return Image.network(
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  Image.asset(_planCoverAssetFallback, fit: BoxFit.cover),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return ColoredBox(
+                  color: const Color(0xFFEDEDED),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        if (widget.urls.length > 1)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 10,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < widget.urls.length; i++)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: i == _index ? 16 : 6,
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(
+                        alpha: i == _index ? .95 : .55,
+                      ),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PlanTags extends StatelessWidget {
+  const _PlanTags();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        _PlanTag(icon: Icons.account_balance_outlined, text: '建筑'),
+        SizedBox(width: 8),
+        _PlanTag(icon: Icons.eco_outlined, text: '自然'),
+        SizedBox(width: 8),
+        _PlanTag(icon: Icons.museum_outlined, text: '人文'),
+      ],
+    );
+  }
+}
+
+class _PlanTag extends StatelessWidget {
+  const _PlanTag({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: const Color(0xFF6C6C6C)),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Color(0xFF6C6C6C),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanMeta extends StatelessWidget {
+  const _PlanMeta({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Flexible(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF8A8A8A)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF777777),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanMiniMapCard extends StatelessWidget {
+  const _PlanMiniMapCard({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(height: 154, child: _DetailRouteMap(plan: plan)),
+    );
+  }
+}
+
+class _PlanRouteInlineSection extends StatelessWidget {
+  const _PlanRouteInlineSection({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = _routeSegmentsFor(plan);
+    final days = _dailyPlanFor(plan);
+    final totalDistance = segments.fold<int>(
+      0,
+      (sum, segment) => sum + segment.distanceKm,
+    );
+    final totalHours = segments.fold<double>(
+      0,
+      (sum, segment) => sum + segment.durationHours,
+    );
+
+    return Column(
+      key: const Key('route-planner-inline'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _RouteSummaryTile(
+                icon: Icons.route_outlined,
+                value: '$totalDistance km',
+                label: '预估总里程',
+                color: plan.accent,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _RouteSummaryTile(
+                icon: Icons.schedule_rounded,
+                value: '${totalHours.toStringAsFixed(1)} h',
+                label: '城际交通',
+                color: const Color(0xFF24D391),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _RouteSectionTitle(
+          icon: Icons.alt_route_rounded,
+          title: '目的地路线',
+          action: '共${segments.length}段',
+        ),
+        const SizedBox(height: 10),
+        for (var i = 0; i < segments.length; i++)
+          _RouteSegmentCard(
+            segment: segments[i],
+            index: i + 1,
+            accent: plan.accent,
+          ),
+        const SizedBox(height: 16),
+        _RouteSectionTitle(
+          icon: Icons.event_note_rounded,
+          title: '每日安排',
+          action: '${plan.days}天',
+        ),
+        const SizedBox(height: 10),
+        for (final day in days) _DailyPlanCard(day: day, accent: plan.accent),
+      ],
+    );
+  }
+}
+
+class _PlanStartBar extends StatelessWidget {
+  const _PlanStartBar({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        IconButton.filled(
+          onPressed: () {},
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF1F1F1F),
+            fixedSize: const Size(50, 50),
+          ),
+          icon: const Icon(Icons.edit_outlined, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: FilledButton(
+            onPressed: () {},
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1F2230),
+              foregroundColor: Colors.white,
+              fixedSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+            ),
+            child: const Text(
+              '开始我的旅行',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        IconButton.filled(
+          onPressed: () {},
+          style: IconButton.styleFrom(
+            backgroundColor: const Color(0xFF1F2230),
+            foregroundColor: Colors.white,
+            fixedSize: const Size(50, 50),
+          ),
+          icon: const Icon(Icons.near_me_outlined, size: 20),
+        ),
+      ],
+    );
+  }
+}
+
+class _RouteSummaryTile extends StatelessWidget {
+  const _RouteSummaryTile({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .16),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF8A8A8A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSectionTitle extends StatelessWidget {
+  const _RouteSectionTitle({
+    required this.icon,
+    required this.title,
+    required this.action,
+  });
+
+  final IconData icon;
+  final String title;
+  final String action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF1F2230)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF151515),
+            ),
+          ),
+        ),
+        Text(
+          action,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF8A8A8A),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RouteSegmentCard extends StatelessWidget {
+  const _RouteSegmentCard({
+    required this.segment,
+    required this.index,
+    required this.accent,
+  });
+
+  final _RouteSegment segment;
+  final int index;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .16),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$index',
+              style: TextStyle(
+                color: accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${segment.from}  →  ${segment.to}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _TinyRoutePill(
+                      icon: Icons.directions_car_filled_outlined,
+                      text: segment.transport,
+                    ),
+                    _TinyRoutePill(
+                      icon: Icons.straighten_rounded,
+                      text: '${segment.distanceKm} km',
+                    ),
+                    _TinyRoutePill(
+                      icon: Icons.schedule_rounded,
+                      text: '${segment.durationHours.toStringAsFixed(1)} h',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  segment.note,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF707070),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TinyRoutePill extends StatelessWidget {
+  const _TinyRoutePill({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F4F3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: const Color(0xFF777777)),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF666666),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DailyPlanCard extends StatelessWidget {
+  const _DailyPlanCard({required this.day, required this.accent});
+
+  final _DailyPlan day;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .14),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              'D${day.index}',
+              style: TextStyle(
+                color: accent,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  day.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  day.description,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF777777),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSegment {
+  const _RouteSegment({
+    required this.from,
+    required this.to,
+    required this.transport,
+    required this.distanceKm,
+    required this.durationHours,
+    required this.note,
+  });
+
+  final String from;
+  final String to;
+  final String transport;
+  final int distanceKm;
+  final double durationHours;
+  final String note;
+}
+
+class _DailyPlan {
+  const _DailyPlan({
+    required this.index,
+    required this.title,
+    required this.description,
+  });
+
+  final int index;
+  final String title;
+  final String description;
+}
+
+List<_RouteSegment> _routeSegmentsFor(TravelPlan plan) {
+  final overrides = _routeSegmentOverrides[plan.title];
+  if (overrides != null) return overrides;
+
+  final stops = plan.routeStops;
+  return [
+    for (var i = 0; i < stops.length - 1; i++)
+      _RouteSegment(
+        from: stops[i].label,
+        to: stops[i + 1].label,
+        transport: '自驾/包车',
+        distanceKm: _estimateDistanceKm(stops[i], stops[i + 1]),
+        durationHours: _estimateDistanceKm(stops[i], stops[i + 1]) / 72,
+        note: '建议上午出发，抵达后先办理入住，再安排轻量游玩。',
+      ),
+  ];
+}
+
+List<_DailyPlan> _dailyPlanFor(TravelPlan plan) {
+  final overrides = _dailyPlanOverrides[plan.title];
+  if (overrides != null) return overrides;
+
+  final stops = plan.routeStops;
+  return [
+    for (var day = 1; day <= plan.days; day++)
+      _DailyPlan(
+        index: day,
+        title: '${stops[((day - 1) * stops.length) ~/ plan.days].label}慢游',
+        description: day == 1
+            ? '抵达集合，整理行李，适应节奏，晚上补充当地美食。'
+            : '上午安排核心景点，下午留给拍照和城市漫步，晚上复盘第二天路线。',
+      ),
+  ];
+}
+
+int _estimateDistanceKm(RouteStop from, RouteStop to) {
+  final dx = (from.position.dx - to.position.dx).abs();
+  final dy = (from.position.dy - to.position.dy).abs();
+  return (90 + (dx + dy) * 520).round();
+}
+
+const Map<String, List<_RouteSegment>> _routeSegmentOverrides = {
+  '青甘大环线10天游': [
+    _RouteSegment(
+      from: '西宁',
+      to: '青海湖',
+      transport: '包车/自驾',
+      distanceKm: 150,
+      durationHours: 2.5,
+      note: '下午抵达湖边更适合看光线，旺季建议提前确认湖景住宿。',
+    ),
+    _RouteSegment(
+      from: '青海湖',
+      to: '茶卡',
+      transport: '包车/自驾',
+      distanceKm: 150,
+      durationHours: 2.2,
+      note: '清晨或傍晚进盐湖，避开正午强光和人流高峰。',
+    ),
+    _RouteSegment(
+      from: '茶卡',
+      to: '敦煌',
+      transport: '包车/自驾',
+      distanceKm: 720,
+      durationHours: 8.5,
+      note: '这是全程最长车段，建议中途安排补给点，不塞满景点。',
+    ),
+    _RouteSegment(
+      from: '敦煌',
+      to: '张掖',
+      transport: '动车/包车',
+      distanceKm: 590,
+      durationHours: 6.5,
+      note: '先看莫高窟和鸣沙山，再转张掖丹霞，视觉节奏更完整。',
+    ),
+  ],
+  '川西雪山小团行': [
+    _RouteSegment(
+      from: '成都',
+      to: '康定',
+      transport: '包车/自驾',
+      distanceKm: 270,
+      durationHours: 4.5,
+      note: '首日海拔爬升明显，抵达后不安排高强度徒步。',
+    ),
+    _RouteSegment(
+      from: '康定',
+      to: '新都桥',
+      transport: '包车/自驾',
+      distanceKm: 80,
+      durationHours: 2,
+      note: '翻越折多山后进入摄影路段，预留停车拍照时间。',
+    ),
+    _RouteSegment(
+      from: '新都桥',
+      to: '塔公',
+      transport: '包车/自驾',
+      distanceKm: 35,
+      durationHours: 1,
+      note: '短距离移动，适合把草原、寺庙和咖啡休息串在一天。',
+    ),
+    _RouteSegment(
+      from: '塔公',
+      to: '四姑娘山',
+      transport: '包车/自驾',
+      distanceKm: 260,
+      durationHours: 5,
+      note: '路况受天气影响较大，建议留一段机动时间。',
+    ),
+  ],
+  '杭州情侣周末游': [
+    _RouteSegment(
+      from: '西湖',
+      to: '灵隐',
+      transport: '打车/公交',
+      distanceKm: 7,
+      durationHours: .5,
+      note: '上午去灵隐更清静，下午回湖边散步。',
+    ),
+    _RouteSegment(
+      from: '灵隐',
+      to: '河坊街',
+      transport: '打车',
+      distanceKm: 9,
+      durationHours: .5,
+      note: '晚餐安排在河坊街一带，步行体验更完整。',
+    ),
+    _RouteSegment(
+      from: '河坊街',
+      to: '滨江',
+      transport: '地铁/打车',
+      distanceKm: 12,
+      durationHours: .7,
+      note: '傍晚过江看城市夜景，节奏轻松。',
+    ),
+    _RouteSegment(
+      from: '滨江',
+      to: '钱江',
+      transport: '步行/骑行',
+      distanceKm: 5,
+      durationHours: .4,
+      note: '适合安排江边骑行和日落拍照。',
+    ),
+  ],
+  '云南朋友毕业旅行': [
+    _RouteSegment(
+      from: '昆明',
+      to: '大理',
+      transport: '动车',
+      distanceKm: 330,
+      durationHours: 2.2,
+      note: '动车效率最高，抵达后直接住古城或洱海边。',
+    ),
+    _RouteSegment(
+      from: '大理',
+      to: '丽江',
+      transport: '动车/包车',
+      distanceKm: 160,
+      durationHours: 2,
+      note: '上午环洱海，下午移动到丽江更顺路。',
+    ),
+    _RouteSegment(
+      from: '丽江',
+      to: '泸沽湖',
+      transport: '商务车',
+      distanceKm: 200,
+      durationHours: 4.5,
+      note: '山路时间较长，建议轻装并提前备晕车药。',
+    ),
+    _RouteSegment(
+      from: '泸沽湖',
+      to: '香格里拉',
+      transport: '包车',
+      distanceKm: 360,
+      durationHours: 6.5,
+      note: '跨区域移动日不要塞活动，抵达后以休息适应海拔为主。',
+    ),
+  ],
+};
+
+const Map<String, List<_DailyPlan>> _dailyPlanOverrides = {
+  '青甘大环线10天游': [
+    _DailyPlan(
+      index: 1,
+      title: '西宁集合',
+      description: '抵达西宁，补给防晒和保暖装备，晚上吃本地羊肉与面片。',
+    ),
+    _DailyPlan(
+      index: 2,
+      title: '西宁 → 青海湖',
+      description: '塔尔寺或日月山后前往青海湖，傍晚看湖边日落。',
+    ),
+    _DailyPlan(
+      index: 3,
+      title: '青海湖深度游',
+      description: '沿湖轻松拍照，避开高强度赶路，晚上住茶卡方向。',
+    ),
+    _DailyPlan(
+      index: 4,
+      title: '茶卡盐湖',
+      description: '清晨进入盐湖，下午转向柴达木盆地，控制车程疲劳。',
+    ),
+    _DailyPlan(index: 5, title: '穿越无人区', description: '安排公路风景和补给点，保持轻量景点节奏。'),
+    _DailyPlan(index: 6, title: '抵达敦煌', description: '下午休整，晚上去沙洲夜市，准备第二天莫高窟。'),
+    _DailyPlan(index: 7, title: '敦煌双核心', description: '莫高窟预约上午场，傍晚鸣沙山月牙泉。'),
+    _DailyPlan(index: 8, title: '敦煌 → 张掖', description: '城际移动为主，中途安排服务区和轻量观景。'),
+    _DailyPlan(index: 9, title: '张掖丹霞', description: '下午进入七彩丹霞，等日落颜色最饱满。'),
+    _DailyPlan(index: 10, title: '张掖返程', description: '上午补拍或买伴手礼，下午返程收尾。'),
+  ],
+};
+
+String _planDateRangeLabel(TravelPlan plan) {
+  final parts = plan.dateRange.split('~');
+  if (parts.length != 2) return plan.dateRange;
+  final startParts = parts.first.split('.');
+  final endParts = parts.last.split('.');
+  if (startParts.length != 3 || endParts.length != 3) return plan.dateRange;
+  return '${startParts[1]}/${startParts[2]}-${endParts[1]}/${endParts[2]}';
+}
+
+String _planDetailDescription(TravelPlan plan) {
+  final start = plan.routeStops.first.label;
+  final end = plan.routeStops.last.label;
+  return '这是一段为期${plan.days}天的中文旅行计划，路线从$start出发一路抵达$end，串联${plan.places}个灵感地点，适合${plan.members}人同行。行程兼顾城市漫步、自然风景与本地人文体验，节奏舒适，适合第一次探索这条路线的旅行者。';
+}
+
+String _planCoverAsset(TravelPlan plan) {
+  if (plan.title.contains('青甘')) return 'assets/images/photo-xinjiang.png';
+  if (plan.title.contains('川西')) return 'assets/images/photo-sichuan.png';
+  if (plan.title.contains('杭州')) {
+    return 'assets/images/c7fada39e6124c21b44577c65e25f962.webp';
+  }
+  if (plan.title.contains('云南')) return 'assets/images/photo-neimenggu.png';
+  return _planCoverAssetFallback;
+}
+
+String _planCoverKeyword(TravelPlan plan) {
+  if (plan.title.contains('青甘')) return '青海湖景区';
+  if (plan.title.contains('川西')) return '四姑娘山景区';
+  if (plan.title.contains('杭州')) return '西湖风景名胜区';
+  if (plan.title.contains('云南')) return '香格里拉普达措国家公园';
+  return plan.routeStops.last.label;
+}
+
+String _planCoverCity(TravelPlan plan) {
+  if (plan.title.contains('青甘')) return '西宁';
+  if (plan.title.contains('川西')) return '阿坝';
+  if (plan.title.contains('杭州')) return '杭州';
+  if (plan.title.contains('云南')) return '迪庆';
+  return '';
+}
+
+class _DetailRouteMap extends StatelessWidget {
+  const _DetailRouteMap({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(child: CustomPaint(painter: _RouteMapPainter(plan))),
+        Positioned(
+          left: 28,
+          bottom: 86,
+          child: _MapControlButton(icon: Icons.add, onTap: () {}),
+        ),
+        Positioned(
+          left: 28,
+          bottom: 42,
+          child: _MapControlButton(icon: Icons.remove, onTap: () {}),
+        ),
+        Positioned(
+          right: 28,
+          bottom: 56,
+          child: _MapControlButton(
+            icon: Icons.my_location_outlined,
+            onTap: () {},
+          ),
+        ),
+        for (var i = 0; i < plan.routeStops.length; i++)
+          _DetailPhotoMarker(
+            stop: plan.routeStops[i],
+            photo: 'assets/images/photo-${(i % 7) + 1}.png',
+            color: i.isEven ? plan.accent : const Color(0xFFFF7A45),
+          ),
+      ],
+    );
+  }
+}
+
+class _DetailPhotoMarker extends StatelessWidget {
+  const _DetailPhotoMarker({
+    required this.stop,
+    required this.photo,
+    required this.color,
+  });
+
+  final RouteStop stop;
+  final String photo;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 24 + stop.position.dx * 280,
+      top: 52 + stop.position.dy * 190,
+      child: Container(
+        width: 52,
+        height: 52,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x22000000),
+              blurRadius: 12,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Image.asset(photo, fit: BoxFit.cover),
+            ),
+            Positioned(
+              right: -5,
+              bottom: -5,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(
+                  Icons.place_rounded,
+                  color: Colors.white,
+                  size: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapControlButton extends StatelessWidget {
+  const _MapControlButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 8,
+      shadowColor: const Color(0x22000000),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, size: 22, color: const Color(0xFF4F4F4F)),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailTipCard extends StatelessWidget {
+  const _DetailTipCard({required this.plan});
 
   final TravelPlan plan;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 122),
-      padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
+      padding: const EdgeInsets.fromLTRB(18, 16, 20, 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(30),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x09000000),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+            color: Color(0x16000000),
+            blurRadius: 20,
+            offset: Offset(0, 10),
           ),
         ],
       ),
       child: Row(
         children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: plan.accent.withValues(alpha: .2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.tips_and_updates, color: plan.accent, size: 20),
+          ),
+          const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  plan.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _StatusChip(plan: plan),
-                const SizedBox(height: 8),
-                Text(
-                  plan.dateRange,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFA4A4A4),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _Metric(icon: Icons.map_outlined, value: '${plan.places}'),
-                    const SizedBox(width: 22),
-                    _Metric(
-                      icon: Icons.people_outline,
-                      value: '${plan.members}',
+            child: Text.rich(
+              TextSpan(
+                text: '优先体验${plan.routeStops[1].label}，再前往',
+                children: [
+                  TextSpan(
+                    text: plan.routeStops.last.label,
+                    style: const TextStyle(
+                      color: Color(0xFF111111),
+                      fontWeight: FontWeight.w900,
                     ),
-                    const SizedBox(width: 22),
-                    _Metric(
-                      icon: Icons.calendar_today_outlined,
-                      value: '${plan.days}',
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                  const TextSpan(text: '，节奏更舒服。'),
+                ],
+              ),
+              style: const TextStyle(
+                color: Color(0xFF6D6D6D),
+                fontSize: 14,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          RoutePreview(plan: plan),
         ],
       ),
     );
@@ -1220,8 +3575,8 @@ class _RouteMapPainter extends CustomPainter {
       final pinColor = isStart
           ? const Color(0xFF24D391)
           : isEnd
-              ? plan.accent
-              : Colors.white;
+          ? plan.accent
+          : Colors.white;
 
       canvas.drawCircle(
         point,
@@ -1253,7 +3608,10 @@ class _RouteMapPainter extends CustomPainter {
   Path _pathFrom(List<Offset> points, Size size) {
     final path = Path();
     for (var i = 0; i < points.length; i++) {
-      final point = Offset(points[i].dx * size.width, points[i].dy * size.height);
+      final point = Offset(
+        points[i].dx * size.width,
+        points[i].dy * size.height,
+      );
       if (i == 0) {
         path.moveTo(point.dx, point.dy);
       } else {
@@ -1381,6 +3739,21 @@ class _NativeMapViewState extends State<NativeMapView> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return AmapWebView(
+        pois: widget.pois
+            .map(
+              (poi) => AmapWebPoi(
+                id: poi.id,
+                name: poi.name,
+                latitude: poi.latitude,
+                longitude: poi.longitude,
+                category: poi.category,
+              ),
+            )
+            .toList(),
+      );
+    }
     if (_useMockMapPreview) {
       return _MockExploreMap(pois: widget.pois);
     }
@@ -1601,11 +3974,7 @@ class _MockExploreMapPainter extends CustomPainter {
     }
     for (var i = 0; i < 7; i++) {
       final x = size.width * (.06 + i * .16);
-      canvas.drawLine(
-        Offset(x, -20),
-        Offset(x + 34, size.height + 20),
-        minor,
-      );
+      canvas.drawLine(Offset(x, -20), Offset(x + 34, size.height + 20), minor);
     }
 
     final highwayShadow = Paint()
@@ -1832,13 +4201,17 @@ class BottomDock extends StatelessWidget {
   final AppTab current;
   final ValueChanged<AppTab> onChanged;
 
+  static const double _width = 258;
+  static const double _height = 58;
+  static const double _activeSize = 32;
+  static const List<double> _buttonCenters = [38, 95, 154, 212];
+
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Container(
-        width: 258,
-        height: 58,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        width: _width,
+        height: _height,
         decoration: BoxDecoration(
           color: const Color(0xFF050505),
           borderRadius: BorderRadius.circular(29),
@@ -1850,33 +4223,33 @@ class BottomDock extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            _DockButton(
-              icon: Icons.home_rounded,
-              tab: AppTab.home,
-              current: current,
-              onChanged: onChanged,
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              left: _buttonCenters[current.index] - (_activeSize / 2),
+              top: 13,
+              child: Container(
+                width: _activeSize,
+                height: _activeSize,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF3C3C3C),
+                  shape: BoxShape.circle,
+                ),
+              ),
             ),
-            _DockButton(
-              icon: Icons.map_outlined,
-              tab: AppTab.explore,
-              current: current,
-              onChanged: onChanged,
-            ),
-            _DockButton(
-              icon: Icons.calendar_month_outlined,
-              tab: AppTab.schedule,
-              current: current,
-              onChanged: onChanged,
-            ),
-            _DockButton(
-              icon: Icons.person_outline,
-              tab: AppTab.profile,
-              current: current,
-              onChanged: onChanged,
-            ),
+            for (final item in _DockButtonItem.items)
+              Positioned(
+                left: _buttonCenters[item.tab.index] - 24,
+                top: 5,
+                child: _DockButton(
+                  item: item,
+                  active: current == item.tab,
+                  onChanged: onChanged,
+                ),
+              ),
           ],
         ),
       ),
@@ -1886,30 +4259,82 @@ class BottomDock extends StatelessWidget {
 
 class _DockButton extends StatelessWidget {
   const _DockButton({
-    required this.icon,
-    required this.tab,
-    required this.current,
+    required this.item,
+    required this.active,
     required this.onChanged,
   });
 
-  final IconData icon;
-  final AppTab tab;
-  final AppTab current;
+  final _DockButtonItem item;
+  final bool active;
   final ValueChanged<AppTab> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final active = tab == current;
-    return IconButton(
-      onPressed: () => onChanged(tab),
-      style: IconButton.styleFrom(
-        fixedSize: const Size(32, 32),
-        backgroundColor: active ? const Color(0xFF3C3C3C) : Colors.transparent,
-        foregroundColor: active ? Colors.white : const Color(0xFF726E6E),
+    return Material(
+      color: Colors.transparent,
+      child: InkResponse(
+        onTap: () => onChanged(item.tab),
+        radius: 24,
+        containedInkWell: true,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Center(
+            child: Image.asset(
+              item.asset,
+              width: item.width,
+              height: item.height,
+              color: active ? Colors.white : const Color(0xFF726E6E),
+              colorBlendMode: BlendMode.srcIn,
+              filterQuality: FilterQuality.none,
+            ),
+          ),
+        ),
       ),
-      icon: Icon(icon, size: 18),
     );
   }
+}
+
+class _DockButtonItem {
+  const _DockButtonItem({
+    required this.tab,
+    required this.asset,
+    required this.width,
+    required this.height,
+  });
+
+  final AppTab tab;
+  final String asset;
+  final double width;
+  final double height;
+
+  static const items = [
+    _DockButtonItem(
+      tab: AppTab.home,
+      asset: 'assets/icons/nav-home-figma.png',
+      width: 12,
+      height: 12,
+    ),
+    _DockButtonItem(
+      tab: AppTab.explore,
+      asset: 'assets/icons/nav-map-figma.png',
+      width: 16,
+      height: 16,
+    ),
+    _DockButtonItem(
+      tab: AppTab.schedule,
+      asset: 'assets/icons/nav-calendar-figma.png',
+      width: 15,
+      height: 15,
+    ),
+    _DockButtonItem(
+      tab: AppTab.profile,
+      asset: 'assets/icons/nav-profile-figma.png',
+      width: 16,
+      height: 18,
+    ),
+  ];
 }
 
 class TravelPlan {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">store.is.autonavi.com</domain>
+        <domain includeSubdomains="true">aos-cdn-image.amap.com</domain>
+        <domain includeSubdomains="true">amap.com</domain>
+        <domain includeSubdomains="true">autonavi.com</domain>
+    </domain-config>
+</network-security-config>
