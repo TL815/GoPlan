@@ -1,0 +1,5342 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'ai_travel_agent.dart';
+import 'services/weather_service.dart';
+import 'amap_photo_service_stub.dart'
+    if (dart.library.io) 'amap_photo_service_io.dart';
+import 'amap_web_view_stub.dart'
+    if (dart.library.html) 'amap_web_view_web.dart';
+
+const bool _useMockMapPreview = true;
+const String _planCoverAssetFallback =
+    'assets/images/4b5386239b0a7bb499c00d0c03fa39d4.webp';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const GoPlanApp());
+}
+
+class GoPlanApp extends StatelessWidget {
+  const GoPlanApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'GoPlan',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF28D99A)),
+        scaffoldBackgroundColor: const Color(0xFFF6F6F6),
+        useMaterial3: true,
+        fontFamily: defaultTargetPlatform == TargetPlatform.iOS
+            ? '.SF Pro Text'
+            : null,
+      ),
+      builder: (context, child) => _ResponsiveAppFrame(child: child),
+      home: const GoPlanShell(),
+    );
+  }
+}
+
+class _ResponsiveAppFrame extends StatelessWidget {
+  const _ResponsiveAppFrame({required this.child});
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final content = child ?? const SizedBox.shrink();
+    if (!kIsWeb || size.width < 760) return content;
+
+    final previewWidth = size.width >= 1180 ? 430.0 : 390.0;
+    final previewHeight = (size.height - 56).clamp(680.0, 860.0);
+
+    return ColoredBox(
+      color: const Color(0xFFEFF4F1),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Row(
+            children: [
+              if (size.width >= 1040)
+                const Expanded(child: _WebIntroPanel())
+              else
+                const SizedBox(width: 24),
+              SizedBox(
+                width: previewWidth,
+                height: previewHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6F6F6),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .16),
+                        blurRadius: 34,
+                        offset: const Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        size: Size(previewWidth, previewHeight),
+                        padding: EdgeInsets.zero,
+                        viewPadding: EdgeInsets.zero,
+                      ),
+                      child: content,
+                    ),
+                  ),
+                ),
+              ),
+              if (size.width >= 1040) const Spacer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WebIntroPanel extends StatelessWidget {
+  const _WebIntroPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 36, right: 56),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Image.asset('assets/images/GoPlan.png', width: 156),
+          const SizedBox(height: 34),
+          const Text(
+            '鐢?AI 鎶婃梾琛屾兂娉昞n鏁寸悊鎴愬彲鎵ц璁″垝',
+            style: TextStyle(
+              fontSize: 44,
+              height: 1.12,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF111111),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Web 绔敤浜庡揩閫熼瑙堝拰璋冭瘯锛屽悗缁悓涓€濂?Flutter 浠ｇ爜浠嶅彲缁х画鎵撳寘 Android / iOS銆?',
+            style: TextStyle(
+              fontSize: 17,
+              height: 1.55,
+              color: Color(0xFF5E6864),
+            ),
+          ),
+          const SizedBox(height: 28),
+          const Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _WebFeaturePill(label: 'AI 瀵硅瘽'),
+              _WebFeaturePill(label: '鏃呰璁″垝'),
+              _WebFeaturePill(label: 'Mock 鍦板浘'),
+              _WebFeaturePill(label: '璺ㄧ鎵撳寘'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WebFeaturePill extends StatelessWidget {
+  const _WebFeaturePill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFDDE6E2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+}
+
+enum AppTab { home, explore, schedule, profile }
+
+class GoPlanShell extends StatefulWidget {
+  const GoPlanShell({super.key});
+
+  @override
+  State<GoPlanShell> createState() => _GoPlanShellState();
+}
+
+class _GoPlanShellState extends State<GoPlanShell> {
+  bool _showHome = false;
+  AppTab _tab = AppTab.home;
+
+  void _openCreatePlan() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const _AiChatPage()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_showHome) {
+      return LoadingPage(onStart: () => setState(() => _showHome = true));
+    }
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: IndexedStack(
+              index: _tab.index,
+              children: const [
+                HomePage(),
+                ExplorePage(),
+                PlaceholderPage(
+                  icon: Icons.calendar_month_outlined,
+                  title: '鏃ョ▼妯″潡寮€鍙戜腑...',
+                ),
+                PlaceholderPage(
+                  icon: Icons.person_outline,
+                  title: '涓汉涓績寮€鍙戜腑...',
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 22,
+            child: BottomDock(
+              current: _tab,
+              onChanged: (tab) => setState(() => _tab = tab),
+              onCreatePlan: _openCreatePlan,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LoadingPage extends StatelessWidget {
+  const LoadingPage({super.key, required this.onStart});
+
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final showLegacyLoadingArtwork = false;
+
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset('assets/images/background.png', fit: BoxFit.cover),
+          if (showLegacyLoadingArtwork) ...[
+            Positioned(
+              left: size.width * 0.29,
+              top: size.height * 0.10,
+              child: RotatedBox(
+                quarterTurns: 0,
+                child: Transform.rotate(
+                  angle: 0.18,
+                  child: _TravelPoster(
+                    asset: 'assets/images/鍗＄墖涓€.png',
+                    width: size.width * 0.92,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: size.width * 0.05,
+              top: size.height * 0.32,
+              child: Transform.rotate(
+                angle: -0.34,
+                child: _TravelPoster(
+                  asset: 'assets/images/鍗＄墖浜?png',
+                  width: size.width * 0.94,
+                ),
+              ),
+            ),
+            Positioned(
+              left: size.width * 0.36,
+              top: size.height * 0.52,
+              child: Transform.rotate(
+                angle: 0.36,
+                child: _TravelPoster(
+                  asset: 'assets/images/鍗＄墖涓?png',
+                  width: size.width * 0.92,
+                ),
+              ),
+            ),
+          ],
+          Positioned(
+            left: 32,
+            right: 32,
+            bottom: 28,
+            child: FilledButton(
+              onPressed: onStart,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1C1C1E),
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(58),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
+              child: const Row(
+                children: [
+                  _GoPill(),
+                  Expanded(
+                    child: Text(
+                      '鍘诲嚭鍙戯紒',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TravelPoster extends StatelessWidget {
+  const _TravelPoster({required this.asset, required this.width});
+
+  final String asset;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.asset(asset, width: width, fit: BoxFit.cover),
+    );
+  }
+}
+
+class _GoPill extends StatelessWidget {
+  const _GoPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 66,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: const Text(
+        'Go',
+        style: TextStyle(
+          color: Color(0xFF1C1C1E),
+          fontSize: 22,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 112),
+        children: [
+          const _HomeTopSection(),
+          const _PlanFilters(),
+          const SizedBox(height: 12),
+          ...demoPlans.map(
+            (plan) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: PlanCard(
+                plan: plan,
+                onTap: () => _openPlanDetail(context, plan),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _openPlanDetail(BuildContext context, TravelPlan plan) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: false,
+    backgroundColor: Colors.transparent,
+    builder: (context) => PlanDetailDrawer(plan: plan),
+  );
+}
+
+class _HomeTopSection extends StatelessWidget {
+  const _HomeTopSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 196,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(left: 0, right: 0, top: 0, child: _HomeHeader()),
+          Positioned(left: 0, right: 0, top: 88, child: _PhotoStrip()),
+          Positioned(left: 0, right: 0, top: 66, child: _AiDialogBar()),
+          Positioned(left: 0, right: 0, bottom: 8, child: _TopDivider()),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopDivider extends StatelessWidget {
+  const _TopDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(height: 1, color: const Color(0xFFE6E6E6));
+  }
+}
+
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const CircleAvatar(
+          radius: 20,
+          backgroundImage: AssetImage('assets/images/鎴戠殑.png'),
+        ),
+        const SizedBox(width: 10),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '寮犱笁',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+              Row(
+                children: [
+                  Icon(
+                    Icons.location_on_outlined,
+                    size: 13,
+                    color: Color(0xFFA8A8A8),
+                  ),
+                  Text(
+                    '涓栫邯澶у帵',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF9D9D9D)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const _WeatherSummary(),
+        const SizedBox(width: 10),
+        IconButton.filled(
+          onPressed: () {},
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF151515),
+          ),
+          icon: const Icon(Icons.notifications_none),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeatherSummary extends StatefulWidget {
+  const _WeatherSummary();
+
+  @override
+  State<_WeatherSummary> createState() => _WeatherSummaryState();
+}
+
+class _WeatherSummaryState extends State<_WeatherSummary> {
+  WeatherData? _weather;
+  bool _loading = true;
+
+  // 榛樿鍩庡競缂栫爜锛氭矆闃筹紙鍙湪璁剧疆涓垏鎹級
+  static const String _defaultAdcode = '210100';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+  }
+
+  Future<void> _loadWeather() async {
+    final data = await WeatherService.fetchWeather(_defaultAdcode);
+    if (mounted) {
+      setState(() {
+        _weather = data;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 鍔犺浇涓樉绀洪鏋?
+    if (_loading) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60,
+            height: 12,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0E0E0),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 30,
+            height: 30,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE0E0E0),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final tempText = _weather?.temperatureRange ?? '21鈩儈36鈩?';
+    final iconAsset = _weather?.weatherIconAsset ?? 'assets/icons/鏅村ぉ.png';
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          tempText,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF8D8D8D),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Image.asset(iconAsset, width: 30),
+      ],
+    );
+  }
+}
+
+class _AiDialogBar extends StatelessWidget {
+  const _AiDialogBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => _openAiChat(context),
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.only(left: 12, right: 13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x18000000),
+                blurRadius: 22,
+                offset: Offset(0, 10),
+              ),
+              BoxShadow(
+                color: Color(0x0A000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Image.asset('assets/images/ai.png', width: 38, height: 38),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  '鑱婅亰浣犵殑鏃呰鎯虫硶',
+                  style: TextStyle(color: Color(0xFF8F8F8F), fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(width: 1, height: 22, color: const Color(0xFFE7E7E7)),
+              const SizedBox(width: 10),
+              const Icon(
+                Icons.keyboard_voice_outlined,
+                color: Color(0xFF4C4C4C),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openAiChat(BuildContext context) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const _AiChatPage()));
+  }
+}
+
+class _AiChatPage extends StatefulWidget {
+  const _AiChatPage();
+
+  @override
+  State<_AiChatPage> createState() => _AiChatPageState();
+}
+
+class _AiChatPageState extends State<_AiChatPage> {
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final AiTravelAgent _agent = createAiTravelAgent();
+  final List<_AiChatMessage> _messages = [];
+  final List<AiTravelAgentTurn> _agentHistory = [];
+  bool _isThinking = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send([String? preset]) async {
+    final text = (preset ?? _controller.text).trim();
+    if (text.isEmpty || _isThinking) return;
+
+    setState(() {
+      _controller.clear();
+      _messages.add(_AiChatMessage(role: _AiChatRole.user, text: text));
+      _isThinking = true;
+    });
+    _scrollToBottom();
+
+    try {
+      final history = List<AiTravelAgentTurn>.of(_agentHistory);
+      final plan = await _agent.planTrip(text, history: history);
+      if (!mounted) return;
+      final assistantText = plan.toChatText();
+      setState(() {
+        _messages.add(
+          _AiChatMessage(
+            role: _AiChatRole.assistant,
+            text: assistantText,
+            plan: plan,
+          ),
+        );
+        _agentHistory
+          ..add(AiTravelAgentTurn(role: AiTravelAgentRole.user, content: text))
+          ..add(
+            AiTravelAgentTurn(
+              role: AiTravelAgentRole.assistant,
+              content: assistantText,
+            ),
+          );
+        _isThinking = false;
+      });
+    } on AiTravelAgentException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(role: _AiChatRole.assistant, text: error.message),
+        );
+        _isThinking = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(role: _AiChatRole.assistant, text: 'AI 瑙勫垝澶辫触锛?error'),
+        );
+        _isThinking = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8F7),
+      body: SafeArea(
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: Column(
+            children: [
+              const _AiChatHeader(),
+              const _AiChatModeDivider(label: '鐪熷疄 AI 鏃呰璺嚎瑙勫垝'),
+              Expanded(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
+                  children: [
+                    if (_messages.isEmpty && !_isThinking)
+                      _AiChatEmptyState(onPromptSelected: _send),
+                    for (final message in _messages)
+                      _AiMessageBubble(message: message),
+                    if (_isThinking) const _AiThinkingBubble(),
+                  ],
+                ),
+              ),
+              _AiChatInput(
+                controller: _controller,
+                enabled: !_isThinking,
+                onSend: _send,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiChatHeader extends StatelessWidget {
+  const _AiChatHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 66,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back_rounded, size: 24),
+              color: const Color(0xFF202326),
+            ),
+            const SizedBox(width: 4),
+            const Expanded(
+              child: Text(
+                'GoPlan AI 鏃呰瑙勫垝',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF151515),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.edit_outlined, size: 22),
+              color: const Color(0xFF202326),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.more_vert_rounded, size: 23),
+              color: const Color(0xFF202326),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiChatModeDivider extends StatelessWidget {
+  const _AiChatModeDivider({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(color: Color(0xFFE4E4E4))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFFB3B3B3),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider(color: Color(0xFFE4E4E4))),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiChatEmptyState extends StatelessWidget {
+  const _AiChatEmptyState({required this.onPromptSelected});
+
+  final ValueChanged<String> onPromptSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 28, bottom: 18),
+      child: Column(
+        children: [
+          const _AiOrb(size: 46),
+          const SizedBox(height: 18),
+          const Text(
+            '鍛婅瘔鎴戜綘鐨勬梾琛屾兂娉?',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF151515),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '鎴戜細璋冪敤鐪熷疄 AI Agent锛岀敓鎴愬彲鎵ц鐨勬瘡鏃ヨ矾绾裤€佷氦閫氥€佺編椋熷拰娉ㄦ剰浜嬮」銆?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: Color(0xFF858B8D),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 22),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              _AiPromptChip(
+                text: '宸濊タ闆北 6 澶?',
+                onTap: () => onPromptSelected(
+                  '浠庢垚閮藉嚭鍙戯紝甯垜瑙勫垝宸濊タ闆北灏忕幆绾?6 澶╋紝鑺傚鑸掗€傦紝閫傚悎绗竴娆″幓銆?',
+                ),
+              ),
+              _AiPromptChip(
+                text: '鏉窞鍛ㄦ湯鎯呬荆娓?',
+                onTap: () => onPromptSelected(
+                  '甯垜瑙勫垝鏉窞 2 澶╂儏渚ｅ懆鏈父锛屾兂瑕佽タ婀栥€佸挅鍟°€佽交鏉炬媿鐓с€?',
+                ),
+              ),
+              _AiPromptChip(
+                text: '浜戝崡姣曚笟鏃呰',
+                onTap: () => onPromptSelected(
+                  '甯垜瑙勫垝浜戝崡 8 澶╂瘯涓氭梾琛岋紝4 涓汉锛屽枩娆㈢編椋熴€佸彜鍩庡拰鑷劧椋庢櫙銆?',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiPromptChip extends StatelessWidget {
+  const _AiPromptChip({required this.text, required this.onTap});
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF343738),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiMessageBubble extends StatelessWidget {
+  const _AiMessageBubble({required this.message});
+
+  final _AiChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.role == _AiChatRole.user;
+    final bubble = message.plan == null
+        ? _AiTextBubble(message: message)
+        : _AiPlanBubble(plan: message.plan!);
+
+    if (isUser) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 18),
+          child: bubble,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _AiOrb(size: 20),
+          const SizedBox(width: 10),
+          Flexible(child: bubble),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiTextBubble extends StatelessWidget {
+  const _AiTextBubble({required this.message});
+
+  final _AiChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * .7,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Text(
+        message.text,
+        style: const TextStyle(
+          color: Color(0xFF202426),
+          fontSize: 14,
+          height: 1.42,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _AiPlanBubble extends StatelessWidget {
+  const _AiPlanBubble({required this.plan});
+
+  final TravelAgentResult plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * .74,
+      ),
+      padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${plan.destination} 路 ${plan.durationDays} 澶?',
+            style: const TextStyle(
+              color: Color(0xFF151515),
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            plan.summary,
+            style: const TextStyle(
+              color: Color(0xFF5F6669),
+              fontSize: 13,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final day in plan.days)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _AiPlanDayRow(day: day),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiPlanDayRow extends StatelessWidget {
+  const _AiPlanDayRow({required this.day});
+
+  final TravelAgentDay day;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8F7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'D${day.day} ${day.title}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF202426),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              day.route,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: Color(0xFF636B6E),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              day.transport,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.35,
+                color: Color(0xFF8A9294),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiThinkingBubble extends StatelessWidget {
+  const _AiThinkingBubble();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        children: [
+          const _AiOrb(size: 20),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x12000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: const Text(
+              'AI 姝ｅ湪鏁寸悊  鈥⑩€⑩€?',
+              style: TextStyle(fontSize: 14, color: Color(0xFF8A8F91)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiChatInput extends StatelessWidget {
+  const _AiChatInput({
+    required this.controller,
+    required this.enabled,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+      child: Container(
+        height: 54,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(27),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 16,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.attach_file_rounded, size: 20),
+              color: const Color(0xFF4A4D50),
+            ),
+            Container(width: 1, height: 24, color: const Color(0xFFE8E8E8)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                enabled: enabled,
+                controller: controller,
+                minLines: 1,
+                maxLines: 1,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => onSend(),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '闂垜浠讳綍鏃呰闂...',
+                  hintStyle: TextStyle(
+                    color: Color(0xFF9B9FA1),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: enabled ? onSend : null,
+              icon: const Icon(Icons.keyboard_voice_outlined, size: 21),
+              color: const Color(0xFF4A4D50),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiOrb extends StatelessWidget {
+  const _AiOrb({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          center: Alignment(-.35, -.35),
+          radius: .9,
+          colors: [Color(0xFFE7FFF0), Color(0xFF6DE58E), Color(0xFF17B95A)],
+          stops: [0, .48, 1],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x3317B95A),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _AiChatRole { user, assistant }
+
+class _AiChatMessage {
+  const _AiChatMessage({required this.role, required this.text, this.plan});
+
+  final _AiChatRole role;
+  final String text;
+  final TravelAgentResult? plan;
+}
+
+class _PhotoStrip extends StatelessWidget {
+  const _PhotoStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<_HomePhotoItem>>(
+      future: _fetchHomePhotoStripItems(),
+      builder: (context, snapshot) {
+        final isLoading = snapshot.connectionState != ConnectionState.done;
+        if (isLoading && !snapshot.hasData) {
+          return const _PhotoStripLoading();
+        }
+
+        final photos = snapshot.data ?? const [];
+        return _PhotoStripStack(
+          photos: photos.isEmpty ? _fallbackHomePhotoItems : photos,
+        );
+      },
+    );
+  }
+}
+
+class _PhotoStripLoading extends StatelessWidget {
+  const _PhotoStripLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const count = 6;
+        const cardWidth = 60.0;
+        const cardHeight = 58.0;
+        const step = 50.0;
+        const totalWidth = cardWidth + step * (count - 1);
+        final leftBase = ((constraints.maxWidth - totalWidth) / 2).clamp(
+          10.0,
+          28.0,
+        );
+
+        return SizedBox(
+          height: 92,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < count; i++)
+                Positioned(
+                  left: leftBase + i * step,
+                  top: _photoTop(i),
+                  child: Transform.rotate(
+                    angle: _photoAngle(i),
+                    child: Container(
+                      width: cardWidth,
+                      height: cardHeight,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x18000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDEDED),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PhotoStripStack extends StatelessWidget {
+  const _PhotoStripStack({required this.photos});
+
+  final List<_HomePhotoItem> photos;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final visiblePhotos = photos.take(6).toList(growable: false);
+        const cardWidth = 60.0;
+        const step = 50.0;
+        final totalWidth = cardWidth + step * (visiblePhotos.length - 1);
+        final leftBase = ((constraints.maxWidth - totalWidth) / 2).clamp(
+          10.0,
+          28.0,
+        );
+
+        return SizedBox(
+          height: 92,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < visiblePhotos.length; i++)
+                Positioned(
+                  left: leftBase + i * step,
+                  top: _photoTop(i),
+                  child: Transform.rotate(
+                    angle: _photoAngle(i),
+                    child: _HomePhotoCard(item: visiblePhotos[i]),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HomePhotoCard extends StatelessWidget {
+  const _HomePhotoCard({required this.item});
+
+  final _HomePhotoItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(13),
+        onTap: () => _showHomePhotoSpotSheet(context, item: item),
+        child: Container(
+          width: 60,
+          height: 58,
+          padding: const EdgeInsets.all(2),
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 12,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            clipBehavior: Clip.antiAlias,
+            child: item.isNetwork
+                ? Image.network(
+                    item.image,
+                    width: 60,
+                    height: 54,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, _, _) =>
+                        const _AmapImageErrorPlaceholder(compact: true),
+                  )
+                : Image.asset(
+                    item.image,
+                    width: 60,
+                    height: 54,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AmapImageErrorPlaceholder extends StatelessWidget {
+  const _AmapImageErrorPlaceholder({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xFFEAF1EC),
+      child: Center(
+        child: compact
+            ? const Icon(
+                Icons.cloud_off_outlined,
+                size: 18,
+                color: Color(0xFF8AA096),
+              )
+            : const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    size: 30,
+                    color: Color(0xFF8AA096),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '楂樺痉鍥剧墖鍔犺浇澶辫触',
+                    style: TextStyle(
+                      color: Color(0xFF7C8B85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+void _showHomePhotoSpotSheet(
+  BuildContext context, {
+  required _HomePhotoItem item,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: false,
+    backgroundColor: Colors.transparent,
+    builder: (context) => _HomePhotoSpotSheet(item: item),
+  );
+}
+
+class _HomePhotoSpotSheet extends StatefulWidget {
+  const _HomePhotoSpotSheet({required this.item});
+
+  final _HomePhotoItem item;
+
+  @override
+  State<_HomePhotoSpotSheet> createState() => _HomePhotoSpotSheetState();
+}
+
+class _HomePhotoSpotSheetState extends State<_HomePhotoSpotSheet> {
+  late final DraggableScrollableController _controller;
+  bool _isFullScreen = false;
+  bool _isPromotingToPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = DraggableScrollableController()..addListener(_handleChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_handleChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleChanged() {
+    if (_controller.size > .955 && !_isPromotingToPage) {
+      _isPromotingToPage = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => _HomePhotoSpotFullPage(item: widget.item),
+          ),
+        );
+      });
+      return;
+    }
+
+    final next = _controller.size > .92;
+    if (next != _isFullScreen) setState(() => _isFullScreen = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      controller: _controller,
+      initialChildSize: .62,
+      minChildSize: .42,
+      maxChildSize: 1,
+      expand: false,
+      snap: true,
+      snapSizes: const [.62, 1],
+      builder: (context, scrollController) {
+        final topPadding =
+            (_isFullScreen ? MediaQuery.viewPaddingOf(context).top : 0.0) +
+            14.0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8F7),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(_isFullScreen ? 0 : 30),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 28,
+                      offset: Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: _HomePhotoSpotContent(
+                  item: widget.item,
+                  controller: scrollController,
+                  topPadding: topPadding,
+                  showClose: _isFullScreen,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+            if (!_isFullScreen) const _SheetTopGrip(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HomePhotoSpotFullPage extends StatelessWidget {
+  const _HomePhotoSpotFullPage({required this.item});
+
+  final _HomePhotoItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SafeFullPageScaffold(
+      backgroundColor: const Color(0xFFF7F8F7),
+      onClose: () => Navigator.of(context).pop(),
+      child: _HomePhotoSpotContent(
+        item: item,
+        showClose: false,
+        onClose: () => Navigator.of(context).pop(),
+      ),
+    );
+  }
+}
+
+class _HomePhotoSpotContent extends StatelessWidget {
+  const _HomePhotoSpotContent({
+    required this.item,
+    required this.showClose,
+    required this.onClose,
+    this.controller,
+    this.topPadding,
+  });
+
+  final _HomePhotoItem item;
+  final ScrollController? controller;
+  final bool showClose;
+  final VoidCallback onClose;
+  final double? topPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final poiFacts = _poiFactItems(item);
+    final galleryUrls = _homePhotoGalleryUrls(item);
+    return ListView(
+      controller: controller,
+      padding: EdgeInsets.fromLTRB(14, topPadding ?? 14, 14, 22),
+      children: [
+        _HomePhotoSpotHero(item: item, onClose: showClose ? onClose : null),
+        if (galleryUrls.length > 1) ...[
+          const SizedBox(height: 10),
+          _HomePhotoGallery(urls: galleryUrls),
+        ],
+        const SizedBox(height: 18),
+        Text(
+          item.spot.name,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF111111),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(
+              Icons.location_on_outlined,
+              size: 15,
+              color: Color(0xFF8C9490),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              item.spot.city,
+              style: const TextStyle(
+                color: Color(0xFF7D8581),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final tag in item.spot.tags) _SpotTag(label: tag)],
+        ),
+        if (poiFacts.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _HomePhotoPoiFacts(facts: poiFacts),
+        ],
+        const SizedBox(height: 16),
+        Text(
+          _homePhotoSpotDescription(item),
+          style: const TextStyle(
+            color: Color(0xFF555E5A),
+            fontSize: 14,
+            height: 1.55,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _HomePhotoSpotTip(tip: item.spot.tip),
+      ],
+    );
+  }
+}
+
+class _HomePhotoSpotHero extends StatelessWidget {
+  const _HomePhotoSpotHero({required this.item, this.onClose});
+
+  final _HomePhotoItem item;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 180,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            item.isNetwork
+                ? Image.network(
+                    item.image,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, _, _) =>
+                        const _AmapImageErrorPlaceholder(),
+                  )
+                : Image.asset(item.image, fit: BoxFit.cover),
+            if (onClose != null)
+              Positioned(
+                right: 12,
+                top: 12,
+                child: _HeroCloseButton(onPressed: onClose!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomePhotoGallery extends StatelessWidget {
+  const _HomePhotoGallery({required this.urls});
+
+  final List<String> urls;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              urls[index],
+              width: 78,
+              height: 58,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) =>
+                  const _AmapImageErrorPlaceholder(compact: true),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+List<String> _homePhotoGalleryUrls(_HomePhotoItem item) {
+  final urls = item.amapSpot?.photoUrls ?? const <String>[];
+  if (urls.isEmpty) return [item.image];
+  return urls.take(8).toList(growable: false);
+}
+
+class _HomePhotoSpotTip extends StatelessWidget {
+  const _HomePhotoSpotTip({required this.tip});
+
+  final String tip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE8FFF3),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.tips_and_updates_outlined,
+              size: 17,
+              color: Color(0xFF18C777),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              tip,
+              style: const TextStyle(
+                color: Color(0xFF5E6662),
+                fontSize: 13,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomePhotoPoiFacts extends StatelessWidget {
+  const _HomePhotoPoiFacts({required this.facts});
+
+  final List<_PoiFact> facts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '楂樺痉 POI 淇℃伅',
+            style: TextStyle(
+              color: Color(0xFF151515),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < facts.length; i++) ...[
+            _PoiFactRow(fact: facts[i]),
+            if (i != facts.length - 1)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Divider(height: 1, color: Color(0xFFEDEDED)),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PoiFactRow extends StatelessWidget {
+  const _PoiFactRow({required this.fact});
+
+  final _PoiFact fact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(fact.icon, size: 18, color: const Color(0xFF19B96D)),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 58,
+          child: Text(
+            fact.label,
+            style: const TextStyle(
+              color: Color(0xFF8A8F8C),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            fact.value,
+            style: const TextStyle(
+              color: Color(0xFF343A37),
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PoiFact {
+  const _PoiFact({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+}
+
+List<_PoiFact> _poiFactItems(_HomePhotoItem item) {
+  final amapFacts = _amapPoiFactItems(item.amapSpot);
+  if (amapFacts.isNotEmpty) return amapFacts;
+
+  return [
+    _PoiFact(
+      icon: Icons.info_outline,
+      label: '鏉ユ簮',
+      value: item.isNetwork ? '楂樺痉 POI' : '鏈湴鍏滃簳鍐呭',
+    ),
+    _PoiFact(
+      icon: Icons.location_city_outlined,
+      label: '鍖哄煙',
+      value: item.spot.city,
+    ),
+    if (item.spot.tags.isNotEmpty)
+      _PoiFact(
+        icon: Icons.local_offer_outlined,
+        label: '鏍囩',
+        value: item.spot.tags.join(' / '),
+      ),
+  ];
+}
+
+List<_PoiFact> _amapPoiFactItems(AmapPhotoSpot? spot) {
+  if (spot == null) return const [];
+
+  final facts = <_PoiFact>[
+    if (spot.rating.isNotEmpty)
+      _PoiFact(icon: Icons.star_rounded, label: '璇勫垎', value: spot.rating),
+    if (spot.openTime.isNotEmpty)
+      _PoiFact(
+        icon: Icons.access_time_rounded,
+        label: '寮€鏀?',
+        value: spot.openTime,
+      ),
+    if (spot.cost.isNotEmpty)
+      _PoiFact(
+        icon: Icons.confirmation_number_outlined,
+        label: '浠锋牸',
+        value: spot.cost,
+      ),
+    if (spot.tel.isNotEmpty)
+      _PoiFact(icon: Icons.phone_outlined, label: '鐢佃瘽', value: spot.tel),
+    if (spot.businessArea.isNotEmpty)
+      _PoiFact(
+        icon: Icons.storefront_outlined,
+        label: '鍟嗗湀',
+        value: spot.businessArea,
+      ),
+    if (spot.address.isNotEmpty)
+      _PoiFact(icon: Icons.place_outlined, label: '鍦板潃', value: spot.address),
+    if (spot.website.isNotEmpty)
+      _PoiFact(icon: Icons.public_outlined, label: '瀹樼綉', value: spot.website),
+    if (spot.location.isNotEmpty)
+      _PoiFact(
+        icon: Icons.gps_fixed_outlined,
+        label: '鍧愭爣',
+        value: spot.location,
+      ),
+    if (spot.photoUrls.length > 1)
+      _PoiFact(
+        icon: Icons.photo_library_outlined,
+        label: '鍥剧墖',
+        value: '${spot.photoUrls.length} 寮?',
+      ),
+  ];
+
+  return facts.take(8).toList(growable: false);
+}
+
+String _homePhotoSpotDescription(_HomePhotoItem item) {
+  final spot = item.amapSpot;
+  if (spot == null) {
+    return '${item.spot.name}褰撳墠灞曠ず鏈湴鍏滃簳鍐呭銆傞珮寰?POI 鏈繑鍥炲彲鐢ㄥ浘鐗囨垨璇︽儏鏃讹紝浼氬厛浣跨敤杩欎唤鍦扮偣璧勬枡淇濇寔椤甸潰鍙祻瑙堛€?{item.spot.description}';
+  }
+
+  final address = spot.address.isEmpty ? spot.city : spot.address;
+  final parts = <String>[
+    '${spot.name}浣嶄簬$address銆?',
+    if (spot.category.isNotEmpty) '楂樺痉鍒嗙被涓?{spot.category}銆?',
+    if (spot.rating.isNotEmpty) '褰撳墠 POI 璇勫垎涓?{spot.rating}銆?',
+    if (spot.openTime.isNotEmpty) '寮€鏀炬椂闂翠负${spot.openTime}銆?',
+    if (spot.cost.isNotEmpty) '浠锋牸/浜哄潎鍙傝€冧负${spot.cost}銆?',
+    if (spot.businessArea.isNotEmpty) '鎵€鍦ㄥ晢鍦堜负${spot.businessArea}銆?',
+  ];
+
+  parts.add('杩欎簺淇℃伅鏉ヨ嚜楂樺痉 POI锛屽彲浣滀负鍔犲叆琛岀▼鍓嶇殑鍩虹鍙傝€冦€?');
+  return parts.join();
+}
+
+class _SheetTopGrip extends StatelessWidget {
+  const _SheetTopGrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned(
+      left: 0,
+      right: 0,
+      top: -24,
+      child: _SheetDragHandle(),
+    );
+  }
+}
+
+class _SheetDragHandle extends StatelessWidget {
+  const _SheetDragHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Center(
+        child: Container(
+          width: 50,
+          height: 6,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpotTag extends StatelessWidget {
+  const _SpotTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAFBF2),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF19B96D),
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+double _photoTop(int index) {
+  const tops = [8.0, 1.0, 5.0, 0.0, 7.0, 3.0];
+  return tops[index % tops.length];
+}
+
+double _photoAngle(int index) {
+  const angles = [-0.08, 0.05, -0.04, 0.06, -0.05, 0.04];
+  return angles[index % angles.length];
+}
+
+class _PlanFilters extends StatelessWidget {
+  const _PlanFilters();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        Text(
+          '鎴戠殑璁″垝',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        ),
+        SizedBox(width: 28),
+        Text('鎺㈢储', style: TextStyle(fontSize: 15, color: Color(0xFF9C9C9C))),
+        Spacer(),
+        Text(
+          '鍏ㄩ儴璁″垝',
+          style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C)),
+        ),
+        Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF9C9C9C)),
+        SizedBox(width: 8),
+        Text('鐘舵€?', style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C))),
+        Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF9C9C9C)),
+      ],
+    );
+  }
+}
+
+class PlanCard extends StatelessWidget {
+  const PlanCard({super.key, required this.plan, this.onTap});
+
+  final TravelPlan plan;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 122),
+          padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x18000000),
+                blurRadius: 22,
+                offset: Offset(0, 10),
+              ),
+              BoxShadow(
+                color: Color(0x08000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      plan.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _StatusChip(plan: plan),
+                    const SizedBox(height: 8),
+                    Text(
+                      plan.dateRange,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFA4A4A4),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _Metric(
+                          icon: Icons.map_outlined,
+                          value: '${plan.places}',
+                        ),
+                        const SizedBox(width: 22),
+                        _Metric(
+                          icon: Icons.people_outline,
+                          value: '${plan.members}',
+                        ),
+                        const SizedBox(width: 22),
+                        _Metric(
+                          icon: Icons.calendar_today_outlined,
+                          value: '${plan.days}',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              RoutePreview(plan: plan),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+const _fallbackHomePhotos = [
+  'assets/images/photo-1.png',
+  'assets/images/photo-2.png',
+  'assets/images/photo-3.png',
+  'assets/images/photo-4.png',
+  'assets/images/photo-5.png',
+  'assets/images/photo-6.png',
+  'assets/images/photo-7.png',
+];
+
+List<_HomePhotoItem> get _fallbackHomePhotoItems {
+  return List<_HomePhotoItem>.generate(
+    _fallbackHomePhotos.length,
+    (index) => _HomePhotoItem(
+      image: _fallbackHomePhotos[index],
+      fallbackImage: _fallbackHomePhotos[index],
+      spot: _homePhotoSpots[index % _homePhotoSpots.length],
+      isNetwork: false,
+    ),
+    growable: false,
+  );
+}
+
+const _homePhotoSpots = [
+  _HomePhotoSpot(
+    name: '涓栫邯鍏洯',
+    city: '涓婃捣 路 娴︿笢鏂板尯',
+    tags: ['鍩庡競缁垮湴', '鏁ｆ', '浜插瓙鍙嬪ソ'],
+    description:
+        '涓栫邯鍏洯鏄郸涓滀腑蹇冨煄鍖洪噷寰堥€傚悎鎱㈤€涚殑寮€鏀惧紡缁垮湴锛屾箹闈€佹灄鑽矾鍜岃崏鍧┖闂撮兘寰堣垝灞曪紝閫傚悎瀹夋帓鍦ㄥ煄甯傝绋嬬殑杞绘澗鍗婂ぉ銆?',
+    tip: '寤鸿涓婂崍鎴栧倣鏅氬墠寰€锛屽厜绾挎洿鏌斿拰锛涘彲浠ュ拰涓栫邯澶ч亾銆侀檰瀹跺槾涓€甯︿覆鎴愪竴鏉¤交閲忓煄甯傛极姝ヨ矾绾裤€?',
+  ),
+  _HomePhotoSpot(
+    name: '澶栨哗涓囧浗寤虹瓚缇?',
+    city: '涓婃捣 路 榛勬郸鍖?',
+    tags: ['澶滄櫙', '寤虹瓚', '缁忓吀鍦版爣'],
+    description:
+        '澶栨哗鏄笂娴锋渶鍏蜂唬琛ㄦ€х殑鍩庡競鐣岄潰锛屼竴渚ф槸鍘嗗彶寤虹瓚缇わ紝鍙︿竴渚ч殧姹熸湜鍚戦檰瀹跺槾澶╅檯绾匡紝閫傚悎绗竴娆″埌涓婃捣鐨勬父瀹綔涓哄煄甯傚嵃璞¤捣鐐广€?',
+    tip: '鍌嶆櫄鍒板闂翠綋楠屾渶濂姐€傛兂閬垮紑浜烘祦锛屽彲浠ヤ粠澶栫櫧娓℃ˉ鏂瑰悜鎱㈡參璧板埌鍗佸叚閾虹爜澶淬€?',
+  ),
+  _HomePhotoSpot(
+    name: '闄嗗鍢村ぉ闄呯嚎',
+    city: '涓婃捣 路 娴︿笢鏂板尯',
+    tags: ['鍩庡競鎽勫奖', '瑙傛櫙', '鍦版爣'],
+    description:
+        '闄嗗鍢磋仛闆嗕簡涓滄柟鏄庣彔銆佷笂娴蜂腑蹇冦€侀噾鑼傚ぇ鍘︾瓑楂樺眰鍦版爣锛岄€傚悎瀹夋帓瑙傛櫙鍙般€佹花姹熸閬撳拰鍟嗗湀浼戞暣銆?',
+    tip: '濡傛灉鏃堕棿绱э紝鍙互鎶婇檰瀹跺槾婊ㄦ睙鍜屽婊╂斁鍦ㄥ悓涓€澶╋紝褰㈡垚涓€鏉￠粍娴︽睙涓ゅ哺瀵规湜璺嚎銆?',
+  ),
+  _HomePhotoSpot(
+    name: '涓滄柟鏄庣彔',
+    city: '涓婃捣 路 娴︿笢鏂板尯',
+    tags: ['瑙傛櫙鍙?', '浜插瓙', '澶滄櫙'],
+    description:
+        '涓滄柟鏄庣彔鏄笂娴疯鲸璇嗗害鏈€楂樼殑鍩庡競鍦版爣涔嬩竴锛岄€傚悎鐧婚珮鐪嬮粍娴︽睙寮亾锛屼篃閫傚悎鍦ㄥ懆杈规媿鎽勫煄甯傚鏅€?',
+    tip: '鐧诲寤鸿鎻愬墠棰勭害锛涘鏋滃彧鎯虫媿鐓э紝闄嗗鍢寸幆宀涘拰婊ㄦ睙姝ラ亾灏辫兘鑾峰緱涓嶉敊瑙嗚銆?',
+  ),
+  _HomePhotoSpot(
+    name: '鑻忓窞娌冲煄甯傛极姝?',
+    city: '涓婃捣 路 闈欏畨/铏瑰彛',
+    tags: ['鎱㈣', '鍜栧暋', '鍘嗗彶琛楀尯'],
+    description:
+        '鑻忓窞娌虫部绾块€傚悎浣庡己搴﹀煄甯傛极姝ワ紝妗ユ銆佷粨搴撴敼閫犵┖闂村拰鍜栧暋灏忓簵瀵嗛泦锛岃妭濂忔瘮鐑棬鏅偣鏇存澗寮涖€?',
+    tip: '鍙互浠庡洓琛屼粨搴撳嚭鍙戯紝娌挎渤璧板埌澶栫櫧娓℃ˉ锛屽啀鎺ュ婊╁鏅紝璺嚎琛旀帴鑷劧銆?',
+  ),
+  _HomePhotoSpot(
+    name: '姝﹀悍璺鍖?',
+    city: '涓婃捣 路 寰愭眹鍖?',
+    tags: ['姊ф琛楅亾', 'Citywalk', '鎷嶇収'],
+    description:
+        '姝﹀悍璺鍖轰互姊ф鏍戙€佽€佹磱鎴垮拰灏忓瀷搴楅摵鏋勬垚杞绘澗鐨勫煄甯傛极姝ユ皼鍥达紝閫傚悎瀹夋帓鍦ㄤ笅鍗堟參鎱㈤€涖€?',
+    tip: '鍛ㄦ湯浜烘祦杈冨锛屽缓璁伐浣滄棩涓婂崍鎴栧倣鏅氬幓锛涜矾绾垮彲涓茶仈瀹夌璺€佹箹鍗楄矾鍜屽緪瀹舵眹鍏洯銆?',
+  ),
+];
+
+class _HomePhotoSpot {
+  const _HomePhotoSpot({
+    required this.name,
+    required this.city,
+    required this.tags,
+    required this.description,
+    required this.tip,
+  });
+
+  final String name;
+  final String city;
+  final List<String> tags;
+  final String description;
+  final String tip;
+}
+
+class _HomePhotoItem {
+  const _HomePhotoItem({
+    required this.image,
+    required this.fallbackImage,
+    required this.spot,
+    required this.isNetwork,
+    this.amapSpot,
+  });
+
+  final String image;
+  final String fallbackImage;
+  final _HomePhotoSpot spot;
+  final bool isNetwork;
+  final AmapPhotoSpot? amapSpot;
+}
+
+Future<List<_HomePhotoItem>> _fetchHomePhotoStripItems() async {
+  const keywords = [
+    '\u4e16\u7eaa\u516c\u56ed',
+    '\u5916\u6ee9',
+    '\u9646\u5bb6\u5634',
+    '\u4e1c\u65b9\u660e\u73e0',
+    '\u8c6b\u56ed',
+    '\u6731\u5bb6\u89d2',
+  ];
+  final results = await Future.wait(
+    keywords.map(
+      (keyword) => fetchAmapPhotoSpots(
+        keyword: keyword,
+        types: '110000',
+        city: '\u4e0a\u6d77',
+      ),
+    ),
+  );
+  final fallbackItems = _fallbackHomePhotoItems;
+  return results
+      .expand((spots) => spots)
+      .take(6)
+      .indexed
+      .map((entry) {
+        final index = entry.$1;
+        final spot = entry.$2;
+        final fallback = fallbackItems[index % fallbackItems.length];
+        return _HomePhotoItem(
+          image: spot.photoUrl,
+          fallbackImage: fallback.fallbackImage,
+          spot: _homePhotoSpotFromAmap(spot),
+          isNetwork: true,
+          amapSpot: spot,
+        );
+      })
+      .toList(growable: false);
+}
+
+_HomePhotoSpot _homePhotoSpotFromAmap(AmapPhotoSpot spot) {
+  final address = spot.address.isEmpty ? spot.city : spot.address;
+  final tags = spot.tags
+      .map(_compactAmapTag)
+      .where((tag) => tag.isNotEmpty)
+      .take(3)
+      .toList(growable: false);
+  return _HomePhotoSpot(
+    name: spot.name,
+    city: spot.city,
+    tags: tags.isEmpty ? const ['鏃呰鐏垫劅'] : tags,
+    description:
+        '${spot.name}浣嶄簬${address.isEmpty ? spot.city : address}锛屾槸楂樺痉 POI 鎺ㄨ崘鐨勬梾琛屽湴鐐广€傝繖閲岄€傚悎鍔犲叆鍩庡競鎺㈢储璺嚎锛屼綔涓烘媿鐓с€佹暎姝ユ垨鐭殏鍋滅暀鐨勮妭鐐广€?',
+    tip:
+        '鍥剧墖銆佸悕绉板拰浣嶇疆鍧囨潵鑷珮寰?POI銆傚缓璁粨鍚堥檮杩戜氦閫氫笌寮€鏀炬椂闂达紝鎶婂畠瀹夋帓鍦ㄥ悓鍖哄煙琛岀▼涓紝鍑忓皯鎶樿繑銆?',
+  );
+}
+
+String _compactAmapTag(String value) {
+  final parts = value.split(';').where((item) => item.trim().isNotEmpty);
+  final last = parts.isEmpty ? value : parts.last;
+  return last.replaceAll('鐩稿叧鍦扮偣', '').trim();
+}
+
+class PlanDetailDrawer extends StatefulWidget {
+  const PlanDetailDrawer({super.key, required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  State<PlanDetailDrawer> createState() => _PlanDetailDrawerState();
+}
+
+class _PlanDetailDrawerState extends State<PlanDetailDrawer> {
+  late final DraggableScrollableController _sheetController;
+  bool _isFullScreen = false;
+  bool _isPromotingToPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheetController = DraggableScrollableController()
+      ..addListener(_handleSheetChanged);
+  }
+
+  @override
+  void dispose() {
+    _sheetController
+      ..removeListener(_handleSheetChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleSheetChanged() {
+    if (_sheetController.size > .955 && !_isPromotingToPage) {
+      _isPromotingToPage = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => PlanDetailFullPage(plan: widget.plan),
+          ),
+        );
+      });
+      return;
+    }
+
+    final nextFullScreen = _sheetController.size > .985;
+    if (nextFullScreen != _isFullScreen) {
+      setState(() => _isFullScreen = nextFullScreen);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      controller: _sheetController,
+      initialChildSize: .88,
+      minChildSize: .46,
+      maxChildSize: 1,
+      expand: false,
+      snap: true,
+      snapSizes: const [.88, 1],
+      builder: (context, scrollController) {
+        final topPadding =
+            (_isFullScreen ? MediaQuery.viewPaddingOf(context).top : 0.0) +
+            14.0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8F7),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(_isFullScreen ? 0 : 30),
+                  ),
+                ),
+                child: _PlanDetailContent(
+                  plan: widget.plan,
+                  controller: scrollController,
+                  showHandle: true,
+                  topPadding: topPadding,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+            if (!_isFullScreen) const _SheetTopGrip(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class PlanDetailFullPage extends StatelessWidget {
+  const PlanDetailFullPage({super.key, required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SafeFullPageScaffold(
+      backgroundColor: const Color(0xFFF3F3F3),
+      onClose: () => Navigator.of(context).pop(),
+      child: _PlanDetailContent(
+        plan: plan,
+        showHandle: false,
+        showCoverClose: false,
+        onClose: () => Navigator.of(context).pop(),
+      ),
+    );
+  }
+}
+
+class _SafeFullPageScaffold extends StatelessWidget {
+  const _SafeFullPageScaffold({
+    required this.backgroundColor,
+    required this.child,
+    this.onClose,
+  });
+
+  final Color backgroundColor;
+  final Widget child;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            Positioned.fill(child: child),
+            if (onClose != null)
+              Positioned(
+                right: 26,
+                top: 26,
+                child: _HeroCloseButton(onPressed: onClose!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanDetailContent extends StatelessWidget {
+  const _PlanDetailContent({
+    required this.plan,
+    required this.showHandle,
+    required this.onClose,
+    this.controller,
+    this.topPadding,
+    this.showCoverClose = true,
+  });
+
+  final TravelPlan plan;
+  final ScrollController? controller;
+  final bool showHandle;
+  final VoidCallback onClose;
+  final double? topPadding;
+  final bool showCoverClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      controller: controller,
+      padding: EdgeInsets.fromLTRB(
+        14,
+        topPadding ?? (showHandle ? 14 : 6),
+        14,
+        28,
+      ),
+      children: [
+        _PlanCover(
+          plan: plan,
+          onClose: showCoverClose && !showHandle ? onClose : null,
+        ),
+        const SizedBox(height: 16),
+        const _PlanTags(),
+        const SizedBox(height: 14),
+        Text(
+          '${plan.title} 路 ${plan.days}澶?',
+          style: const TextStyle(
+            fontSize: 22,
+            height: 1.16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+            color: Color(0xFF141414),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            _PlanMeta(
+              icon: Icons.payments_outlined,
+              text: '楼${plan.days * 320} 浜哄潎',
+            ),
+            const SizedBox(width: 18),
+            _PlanMeta(icon: Icons.map_outlined, text: '${plan.places} 涓湴鐐?'),
+            const SizedBox(width: 18),
+            _PlanMeta(
+              icon: Icons.calendar_month_outlined,
+              text: _planDateRangeLabel(plan),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        const Divider(height: 1, color: Color(0xFFE5E5E5)),
+        const SizedBox(height: 18),
+        Text(
+          _planDetailDescription(plan),
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.7,
+            color: Color(0xFF747474),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 22),
+        _PlanMiniMapCard(plan: plan),
+        const SizedBox(height: 18),
+        _PlanTimelineSection(plan: plan),
+        const SizedBox(height: 18),
+        _DetailTipCard(plan: plan),
+        const SizedBox(height: 18),
+        _PlanStartBar(plan: plan),
+      ],
+    );
+  }
+}
+
+class _PlanCover extends StatelessWidget {
+  const _PlanCover({required this.plan, this.onClose});
+
+  final TravelPlan plan;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: AspectRatio(
+        aspectRatio: 1.78,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _AmapPlanCoverImage(plan: plan),
+            if (onClose != null)
+              Positioned(
+                right: 12,
+                top: 12,
+                child: _HeroCloseButton(onPressed: onClose!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroCloseButton extends StatelessWidget {
+  const _HeroCloseButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onPressed,
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Center(
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .92),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: Color(0xFF111111),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AmapPlanCoverImage extends StatelessWidget {
+  const _AmapPlanCoverImage({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallbackUrls = [_planCoverAsset(plan)];
+    return FutureBuilder<List<String>>(
+      future: fetchAmapPhotoUrls(
+        keyword: _planCoverKeyword(plan),
+        city: _planCoverCity(plan),
+      ),
+      builder: (context, snapshot) {
+        final isLoading = snapshot.connectionState != ConnectionState.done;
+        if (isLoading && !snapshot.hasData) {
+          return const _PlanCoverLoading();
+        }
+
+        final urls = snapshot.data?.isNotEmpty == true
+            ? snapshot.data!
+            : fallbackUrls;
+        return _PlanCoverCarousel(
+          urls: urls,
+          isNetwork: snapshot.data?.isNotEmpty == true,
+        );
+      },
+    );
+  }
+}
+
+class _PlanCoverLoading extends StatelessWidget {
+  const _PlanCoverLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFEDEDED),
+      child: Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanCoverCarousel extends StatefulWidget {
+  const _PlanCoverCarousel({required this.urls, required this.isNetwork});
+
+  final List<String> urls;
+  final bool isNetwork;
+
+  @override
+  State<_PlanCoverCarousel> createState() => _PlanCoverCarouselState();
+}
+
+class _PlanCoverCarouselState extends State<_PlanCoverCarousel> {
+  late final PageController _controller;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlanCoverCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.urls != widget.urls) {
+      _index = 0;
+      if (_controller.hasClients) _controller.jumpToPage(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _controller,
+          itemCount: widget.urls.length,
+          onPageChanged: (index) => setState(() => _index = index),
+          itemBuilder: (context, index) {
+            final url = widget.urls[index];
+            if (!widget.isNetwork) {
+              return Image.asset(url, fit: BoxFit.cover);
+            }
+            return Image.network(
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  Image.asset(_planCoverAssetFallback, fit: BoxFit.cover),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return ColoredBox(
+                  color: const Color(0xFFEDEDED),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        if (widget.urls.length > 1)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 10,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < widget.urls.length; i++)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: i == _index ? 16 : 6,
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(
+                        alpha: i == _index ? .95 : .55,
+                      ),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PlanTags extends StatelessWidget {
+  const _PlanTags();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        _PlanTag(icon: Icons.account_balance_outlined, text: '寤虹瓚'),
+        SizedBox(width: 8),
+        _PlanTag(icon: Icons.eco_outlined, text: '鑷劧'),
+        SizedBox(width: 8),
+        _PlanTag(icon: Icons.museum_outlined, text: '浜烘枃'),
+      ],
+    );
+  }
+}
+
+class _PlanTag extends StatelessWidget {
+  const _PlanTag({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: const Color(0xFF6C6C6C)),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Color(0xFF6C6C6C),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanMeta extends StatelessWidget {
+  const _PlanMeta({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Flexible(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF8A8A8A)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF777777),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanMiniMapCard extends StatelessWidget {
+  const _PlanMiniMapCard({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(height: 141, child: _DetailRouteMap(plan: plan)),
+    );
+  }
+}
+
+class _PlanTimelineSection extends StatelessWidget {
+  const _PlanTimelineSection({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _dailyPlanFor(plan);
+    return Column(
+      key: const Key('route-timeline-section'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _TimelineSectionHeader(title: '琛岀▼瀹夋帓'),
+        const SizedBox(height: 12),
+        _DailyTimeline(days: days, accent: plan.accent, plan: plan),
+      ],
+    );
+  }
+}
+
+class _TimelineSectionHeader extends StatelessWidget {
+  const _TimelineSectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+        color: Color(0xFF151515),
+      ),
+    );
+  }
+}
+
+class _DailyTimeline extends StatelessWidget {
+  const _DailyTimeline({
+    required this.days,
+    required this.accent,
+    required this.plan,
+  });
+
+  final List<_DailyPlan> days;
+  final Color accent;
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    const railWidth = 34.0;
+    return Stack(
+      children: [
+        const Positioned(
+          left: 12,
+          top: 24,
+          bottom: 22,
+          child: SizedBox(
+            width: 2,
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: Color(0xFFE3E3E3)),
+            ),
+          ),
+        ),
+        Column(
+          children: [
+            for (var i = 0; i < days.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i == days.length - 1 ? 0 : 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: railWidth,
+                      child: _TimelineMarker(index: days[i].index),
+                    ),
+                    Expanded(
+                      child: _TimelineDayCard(
+                        day: days[i],
+                        accent: accent,
+                        plan: plan,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineMarker extends StatelessWidget {
+  const _TimelineMarker({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Container(
+        width: 18,
+        height: 18,
+        alignment: Alignment.center,
+        margin: const EdgeInsets.only(top: 2, left: 3),
+        decoration: const BoxDecoration(
+          color: Color(0xFF050505),
+          shape: BoxShape.circle,
+        ),
+        child: Text(
+          '$index',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineDayCard extends StatelessWidget {
+  const _TimelineDayCard({
+    required this.day,
+    required this.accent,
+    required this.plan,
+  });
+
+  final _DailyPlan day;
+  final Color accent;
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 99,
+      padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _DayBadge(index: day.index),
+                const SizedBox(height: 5),
+                Text(
+                  day.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF141414),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  day.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF858585),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  children: const [
+                    _TinyLabel(text: '鏍囩1'),
+                    _TinyLabel(text: '鏍囩2'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 109,
+              height: 82,
+              child: _TimelinePoiImage(plan: plan, day: day),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimelinePoiImage extends StatelessWidget {
+  const _TimelinePoiImage({required this.plan, required this.day});
+
+  final TravelPlan plan;
+  final _DailyPlan day;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: fetchAmapPhotoUrl(
+        keyword: _timelinePoiKeyword(plan, day),
+        city: _planCoverCity(plan),
+      ),
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (url != null && url.isNotEmpty) {
+          return Image.network(
+            url,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (_, _, _) => _TimelinePoiAssetFallback(plan: plan),
+          );
+        }
+        return _TimelinePoiAssetFallback(plan: plan);
+      },
+    );
+  }
+}
+
+class _TimelinePoiAssetFallback extends StatelessWidget {
+  const _TimelinePoiAssetFallback({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      _planCoverAsset(plan),
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
+    );
+  }
+}
+
+String _timelinePoiKeyword(TravelPlan plan, _DailyPlan day) {
+  final stopIndex = ((day.index - 1) * plan.routeStops.length) ~/ plan.days;
+  final stop = plan.routeStops[stopIndex.clamp(0, plan.routeStops.length - 1)];
+  final title = day.title.replaceAll('鈫?', ' ').trim();
+  return title.isEmpty ? stop.label : title;
+}
+
+class _DayBadge extends StatelessWidget {
+  const _DayBadge({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F6F6),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        child: Text(
+          'Day $index',
+          style: const TextStyle(
+            fontSize: 10,
+            height: 1,
+            color: Color(0xFF3F3F3F),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TinyLabel extends StatelessWidget {
+  const _TinyLabel({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F7),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 10,
+            height: 1,
+            color: Color(0xFFB0B0B0),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _PlanRouteInlineSection extends StatelessWidget {
+  const _PlanRouteInlineSection({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = _routeSegmentsFor(plan);
+    final days = _dailyPlanFor(plan);
+    final totalDistance = segments.fold<int>(
+      0,
+      (sum, segment) => sum + segment.distanceKm,
+    );
+    final totalHours = segments.fold<double>(
+      0,
+      (sum, segment) => sum + segment.durationHours,
+    );
+
+    return Column(
+      key: const Key('route-planner-inline'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _RouteSummaryTile(
+                icon: Icons.route_outlined,
+                value: '$totalDistance km',
+                label: '棰勪及鎬婚噷绋?',
+                color: plan.accent,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _RouteSummaryTile(
+                icon: Icons.schedule_rounded,
+                value: '${totalHours.toStringAsFixed(1)} h',
+                label: '鍩庨檯浜ら€?',
+                color: const Color(0xFF24D391),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _RouteSectionTitle(
+          icon: Icons.alt_route_rounded,
+          title: '鐩殑鍦拌矾绾?',
+          action: '鍏?{segments.length}娈?',
+        ),
+        const SizedBox(height: 10),
+        for (var i = 0; i < segments.length; i++)
+          _RouteSegmentCard(
+            segment: segments[i],
+            index: i + 1,
+            accent: plan.accent,
+          ),
+        const SizedBox(height: 16),
+        _RouteSectionTitle(
+          icon: Icons.event_note_rounded,
+          title: '姣忔棩瀹夋帓',
+          action: '${plan.days}澶?',
+        ),
+        const SizedBox(height: 10),
+        for (final day in days) _DailyPlanCard(day: day, accent: plan.accent),
+      ],
+    );
+  }
+}
+
+class _PlanStartBar extends StatelessWidget {
+  const _PlanStartBar({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final actionWidth = (width - 104).clamp(230.0, 306.0);
+
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton.filled(
+            onPressed: () {},
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF1F1F1F),
+              fixedSize: const Size(56, 56),
+              minimumSize: const Size(56, 56),
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            icon: const Icon(Icons.edit_outlined, size: 22),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: actionWidth,
+            height: 56,
+            child: FilledButton(
+              onPressed: () {},
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0F1014),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.only(left: 24, right: 6),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '寮€濮嬩綘鐨勬梾琛岋紒',
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF34343A),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.near_me_rounded, size: 22),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSummaryTile extends StatelessWidget {
+  const _RouteSummaryTile({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .16),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF8A8A8A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSectionTitle extends StatelessWidget {
+  const _RouteSectionTitle({
+    required this.icon,
+    required this.title,
+    required this.action,
+  });
+
+  final IconData icon;
+  final String title;
+  final String action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF1F2230)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF151515),
+            ),
+          ),
+        ),
+        Text(
+          action,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF8A8A8A),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RouteSegmentCard extends StatelessWidget {
+  const _RouteSegmentCard({
+    required this.segment,
+    required this.index,
+    required this.accent,
+  });
+
+  final _RouteSegment segment;
+  final int index;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .16),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$index',
+              style: TextStyle(
+                color: accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${segment.from}  鈫? ${segment.to}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _TinyRoutePill(
+                      icon: Icons.directions_car_filled_outlined,
+                      text: segment.transport,
+                    ),
+                    _TinyRoutePill(
+                      icon: Icons.straighten_rounded,
+                      text: '${segment.distanceKm} km',
+                    ),
+                    _TinyRoutePill(
+                      icon: Icons.schedule_rounded,
+                      text: '${segment.durationHours.toStringAsFixed(1)} h',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  segment.note,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF707070),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TinyRoutePill extends StatelessWidget {
+  const _TinyRoutePill({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F4F3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: const Color(0xFF777777)),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF666666),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DailyPlanCard extends StatelessWidget {
+  const _DailyPlanCard({required this.day, required this.accent});
+
+  final _DailyPlan day;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .14),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              'D${day.index}',
+              style: TextStyle(
+                color: accent,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  day.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  day.description,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF777777),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSegment {
+  const _RouteSegment({
+    required this.from,
+    required this.to,
+    required this.transport,
+    required this.distanceKm,
+    required this.durationHours,
+    required this.note,
+  });
+
+  final String from;
+  final String to;
+  final String transport;
+  final int distanceKm;
+  final double durationHours;
+  final String note;
+}
+
+class _DailyPlan {
+  const _DailyPlan({
+    required this.index,
+    required this.title,
+    required this.description,
+  });
+
+  final int index;
+  final String title;
+  final String description;
+}
+
+List<_RouteSegment> _routeSegmentsFor(TravelPlan plan) {
+  final overrides = _routeSegmentOverrides[plan.title];
+  if (overrides != null) return overrides;
+
+  final stops = plan.routeStops;
+  return [
+    for (var i = 0; i < stops.length - 1; i++)
+      _RouteSegment(
+        from: stops[i].label,
+        to: stops[i + 1].label,
+        transport: '鑷┚/鍖呰溅',
+        distanceKm: _estimateDistanceKm(stops[i], stops[i + 1]),
+        durationHours: _estimateDistanceKm(stops[i], stops[i + 1]) / 72,
+        note: '寤鸿涓婂崍鍑哄彂锛屾姷杈惧悗鍏堝姙鐞嗗叆浣忥紝鍐嶅畨鎺掕交閲忔父鐜┿€?',
+      ),
+  ];
+}
+
+List<_DailyPlan> _dailyPlanFor(TravelPlan plan) {
+  final overrides = _dailyPlanOverrides[plan.title];
+  if (overrides != null) return overrides;
+
+  final stops = plan.routeStops;
+  return [
+    for (var day = 1; day <= plan.days; day++)
+      _DailyPlan(
+        index: day,
+        title: '${stops[((day - 1) * stops.length) ~/ plan.days].label}鎱㈡父',
+        description: day == 1
+            ? '鎶佃揪闆嗗悎锛屾暣鐞嗚鏉庯紝閫傚簲鑺傚锛屾櫄涓婅ˉ鍏呭綋鍦扮編椋熴€?'
+            : '涓婂崍瀹夋帓鏍稿績鏅偣锛屼笅鍗堢暀缁欐媿鐓у拰鍩庡競婕锛屾櫄涓婂鐩樼浜屽ぉ璺嚎銆?',
+      ),
+  ];
+}
+
+int _estimateDistanceKm(RouteStop from, RouteStop to) {
+  final dx = (from.position.dx - to.position.dx).abs();
+  final dy = (from.position.dy - to.position.dy).abs();
+  return (90 + (dx + dy) * 520).round();
+}
+
+const Map<String, List<_RouteSegment>> _routeSegmentOverrides = {
+  '闈掔敇澶х幆绾?0澶╂父': [
+    _RouteSegment(
+      from: '瑗垮畞',
+      to: '闈掓捣婀?',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 150,
+      durationHours: 2.5,
+      note: '涓嬪崍鎶佃揪婀栬竟鏇撮€傚悎鐪嬪厜绾匡紝鏃哄寤鸿鎻愬墠纭婀栨櫙浣忓銆?',
+    ),
+    _RouteSegment(
+      from: '闈掓捣婀?',
+      to: '鑼跺崱',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 150,
+      durationHours: 2.2,
+      note: '娓呮櫒鎴栧倣鏅氳繘鐩愭箹锛岄伩寮€姝ｅ崍寮哄厜鍜屼汉娴侀珮宄般€?',
+    ),
+    _RouteSegment(
+      from: '鑼跺崱',
+      to: '鏁︾厡',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 720,
+      durationHours: 8.5,
+      note: '杩欐槸鍏ㄧ▼鏈€闀胯溅娈碉紝寤鸿涓€斿畨鎺掕ˉ缁欑偣锛屼笉濉炴弧鏅偣銆?',
+    ),
+    _RouteSegment(
+      from: '鏁︾厡',
+      to: '寮犳帠',
+      transport: '鍔ㄨ溅/鍖呰溅',
+      distanceKm: 590,
+      durationHours: 6.5,
+      note: '鍏堢湅鑾珮绐熷拰楦ｆ矙灞憋紝鍐嶈浆寮犳帠涓归湠锛岃瑙夎妭濂忔洿瀹屾暣銆?',
+    ),
+  ],
+  '宸濊タ闆北灏忓洟琛?': [
+    _RouteSegment(
+      from: '鎴愰兘',
+      to: '搴峰畾',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 270,
+      durationHours: 4.5,
+      note: '棣栨棩娴锋嫈鐖崌鏄庢樉锛屾姷杈惧悗涓嶅畨鎺掗珮寮哄害寰掓銆?',
+    ),
+    _RouteSegment(
+      from: '搴峰畾',
+      to: '鏂伴兘妗?',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 80,
+      durationHours: 2,
+      note: '缈昏秺鎶樺灞卞悗杩涘叆鎽勫奖璺锛岄鐣欏仠杞︽媿鐓ф椂闂淬€?',
+    ),
+    _RouteSegment(
+      from: '鏂伴兘妗?',
+      to: '濉斿叕',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 35,
+      durationHours: 1,
+      note: '鐭窛绂荤Щ鍔紝閫傚悎鎶婅崏鍘熴€佸搴欏拰鍜栧暋浼戞伅涓插湪涓€澶┿€?',
+    ),
+    _RouteSegment(
+      from: '濉斿叕',
+      to: '鍥涘濞樺北',
+      transport: '鍖呰溅/鑷┚',
+      distanceKm: 260,
+      durationHours: 5,
+      note: '璺喌鍙楀ぉ姘斿奖鍝嶈緝澶э紝寤鸿鐣欎竴娈垫満鍔ㄦ椂闂淬€?',
+    ),
+  ],
+  '鏉窞鎯呬荆鍛ㄦ湯娓?': [
+    _RouteSegment(
+      from: '瑗挎箹',
+      to: '鐏甸殣',
+      transport: '鎵撹溅/鍏氦',
+      distanceKm: 7,
+      durationHours: .5,
+      note: '涓婂崍鍘荤伒闅愭洿娓呴潤锛屼笅鍗堝洖婀栬竟鏁ｆ銆?',
+    ),
+    _RouteSegment(
+      from: '鐏甸殣',
+      to: '娌冲潑琛?',
+      transport: '鎵撹溅',
+      distanceKm: 9,
+      durationHours: .5,
+      note: '鏅氶瀹夋帓鍦ㄦ渤鍧婅涓€甯︼紝姝ヨ浣撻獙鏇村畬鏁淬€?',
+    ),
+    _RouteSegment(
+      from: '娌冲潑琛?',
+      to: '婊ㄦ睙',
+      transport: '鍦伴搧/鎵撹溅',
+      distanceKm: 12,
+      durationHours: .7,
+      note: '鍌嶆櫄杩囨睙鐪嬪煄甯傚鏅紝鑺傚杞绘澗銆?',
+    ),
+    _RouteSegment(
+      from: '婊ㄦ睙',
+      to: '閽辨睙',
+      transport: '姝ヨ/楠戣',
+      distanceKm: 5,
+      durationHours: .4,
+      note: '閫傚悎瀹夋帓姹熻竟楠戣鍜屾棩钀芥媿鐓с€?',
+    ),
+  ],
+  '浜戝崡鏈嬪弸姣曚笟鏃呰': [
+    _RouteSegment(
+      from: '鏄嗘槑',
+      to: '澶х悊',
+      transport: '鍔ㄨ溅',
+      distanceKm: 330,
+      durationHours: 2.2,
+      note: '鍔ㄨ溅鏁堢巼鏈€楂橈紝鎶佃揪鍚庣洿鎺ヤ綇鍙ゅ煄鎴栨幢娴疯竟銆?',
+    ),
+    _RouteSegment(
+      from: '澶х悊',
+      to: '涓芥睙',
+      transport: '鍔ㄨ溅/鍖呰溅',
+      distanceKm: 160,
+      durationHours: 2,
+      note: '涓婂崍鐜幢娴凤紝涓嬪崍绉诲姩鍒颁附姹熸洿椤鸿矾銆?',
+    ),
+    _RouteSegment(
+      from: '涓芥睙',
+      to: '娉告步婀?',
+      transport: '鍟嗗姟杞?',
+      distanceKm: 200,
+      durationHours: 4.5,
+      note: '灞辫矾鏃堕棿杈冮暱锛屽缓璁交瑁呭苟鎻愬墠澶囨檿杞﹁嵂銆?',
+    ),
+    _RouteSegment(
+      from: '娉告步婀?',
+      to: '棣欐牸閲屾媺',
+      transport: '鍖呰溅',
+      distanceKm: 360,
+      durationHours: 6.5,
+      note: '璺ㄥ尯鍩熺Щ鍔ㄦ棩涓嶈濉炴椿鍔紝鎶佃揪鍚庝互浼戞伅閫傚簲娴锋嫈涓轰富銆?',
+    ),
+  ],
+};
+
+const Map<String, List<_DailyPlan>> _dailyPlanOverrides = {
+  '闈掔敇澶х幆绾?0澶╂父': [
+    _DailyPlan(
+      index: 1,
+      title: '瑗垮畞闆嗗悎',
+      description: '鎶佃揪瑗垮畞锛岃ˉ缁欓槻鏅掑拰淇濇殩瑁呭锛屾櫄涓婂悆鏈湴缇婅倝涓庨潰鐗囥€?',
+    ),
+    _DailyPlan(
+      index: 2,
+      title: '瑗垮畞 鈫?闈掓捣婀?',
+      description: '濉斿皵瀵烘垨鏃ユ湀灞卞悗鍓嶅線闈掓捣婀栵紝鍌嶆櫄鐪嬫箹杈规棩钀姐€?',
+    ),
+    _DailyPlan(
+      index: 3,
+      title: '闈掓捣婀栨繁搴︽父',
+      description: '娌挎箹杞绘澗鎷嶇収锛岄伩寮€楂樺己搴﹁刀璺紝鏅氫笂浣忚尪鍗℃柟鍚戙€?',
+    ),
+    _DailyPlan(
+      index: 4,
+      title: '鑼跺崱鐩愭箹',
+      description: '娓呮櫒杩涘叆鐩愭箹锛屼笅鍗堣浆鍚戞煷杈炬湪鐩嗗湴锛屾帶鍒惰溅绋嬬柌鍔炽€?',
+    ),
+    _DailyPlan(
+      index: 5,
+      title: '绌胯秺鏃犱汉鍖?',
+      description: '瀹夋帓鍏矾椋庢櫙鍜岃ˉ缁欑偣锛屼繚鎸佽交閲忔櫙鐐硅妭濂忋€?',
+    ),
+    _DailyPlan(
+      index: 6,
+      title: '鎶佃揪鏁︾厡',
+      description: '涓嬪崍浼戞暣锛屾櫄涓婂幓娌欐床澶滃競锛屽噯澶囩浜屽ぉ鑾珮绐熴€?',
+    ),
+    _DailyPlan(
+      index: 7,
+      title: '鏁︾厡鍙屾牳蹇?',
+      description: '鑾珮绐熼绾︿笂鍗堝満锛屽倣鏅氶福娌欏北鏈堢墮娉夈€?',
+    ),
+    _DailyPlan(
+      index: 8,
+      title: '鏁︾厡 鈫?寮犳帠',
+      description: '鍩庨檯绉诲姩涓轰富锛屼腑閫斿畨鎺掓湇鍔″尯鍜岃交閲忚鏅€?',
+    ),
+    _DailyPlan(
+      index: 9,
+      title: '寮犳帠涓归湠',
+      description: '涓嬪崍杩涘叆涓冨僵涓归湠锛岀瓑鏃ヨ惤棰滆壊鏈€楗辨弧銆?',
+    ),
+    _DailyPlan(
+      index: 10,
+      title: '寮犳帠杩旂▼',
+      description: '涓婂崍琛ユ媿鎴栦拱浼存墜绀硷紝涓嬪崍杩旂▼鏀跺熬銆?',
+    ),
+  ],
+};
+
+String _planDateRangeLabel(TravelPlan plan) {
+  final parts = plan.dateRange.split('~');
+  if (parts.length != 2) return plan.dateRange;
+  final startParts = parts.first.split('.');
+  final endParts = parts.last.split('.');
+  if (startParts.length != 3 || endParts.length != 3) return plan.dateRange;
+  return '${startParts[1]}/${startParts[2]}-${endParts[1]}/${endParts[2]}';
+}
+
+String _planDetailDescription(TravelPlan plan) {
+  final start = plan.routeStops.first.label;
+  final end = plan.routeStops.last.label;
+  return '杩欐槸涓€娈典负鏈?{plan.days}澶╃殑涓枃鏃呰璁″垝锛岃矾绾夸粠$start鍑哄彂涓€璺姷杈?end锛屼覆鑱?{plan.places}涓伒鎰熷湴鐐癸紝閫傚悎${plan.members}浜哄悓琛屻€傝绋嬪吋椤惧煄甯傛极姝ャ€佽嚜鐒堕鏅笌鏈湴浜烘枃浣撻獙锛岃妭濂忚垝閫傦紝閫傚悎绗竴娆℃帰绱㈣繖鏉¤矾绾跨殑鏃呰鑰呫€?';
+}
+
+String _planCoverAsset(TravelPlan plan) {
+  if (plan.title.contains('闈掔敇')) return 'assets/images/photo-xinjiang.png';
+  if (plan.title.contains('宸濊タ')) return 'assets/images/photo-sichuan.png';
+  if (plan.title.contains('鏉窞')) {
+    return 'assets/images/c7fada39e6124c21b44577c65e25f962.webp';
+  }
+  if (plan.title.contains('浜戝崡')) return 'assets/images/photo-neimenggu.png';
+  return _planCoverAssetFallback;
+}
+
+String _planCoverKeyword(TravelPlan plan) {
+  if (plan.title.contains('闈掔敇')) return '闈掓捣婀栨櫙鍖?';
+  if (plan.title.contains('宸濊タ')) return '鍥涘濞樺北鏅尯';
+  if (plan.title.contains('鏉窞')) return '瑗挎箹椋庢櫙鍚嶈儨鍖?';
+  if (plan.title.contains('浜戝崡')) return '棣欐牸閲屾媺鏅揪鎺浗瀹跺叕鍥?';
+  return plan.routeStops.last.label;
+}
+
+String _planCoverCity(TravelPlan plan) {
+  if (plan.title.contains('闈掔敇')) return '瑗垮畞';
+  if (plan.title.contains('宸濊タ')) return '闃垮潩';
+  if (plan.title.contains('鏉窞')) return '鏉窞';
+  if (plan.title.contains('浜戝崡')) return '杩簡';
+  return '';
+}
+
+class _DetailRouteMap extends StatelessWidget {
+  const _DetailRouteMap({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(painter: _RouteMapPainter(plan, detailed: true)),
+        ),
+        Positioned(
+          left: 28,
+          bottom: 86,
+          child: _MapControlButton(icon: Icons.add, onTap: () {}),
+        ),
+        Positioned(
+          left: 28,
+          bottom: 42,
+          child: _MapControlButton(icon: Icons.remove, onTap: () {}),
+        ),
+        Positioned(
+          right: 28,
+          bottom: 56,
+          child: _MapControlButton(
+            icon: Icons.my_location_outlined,
+            onTap: () {},
+          ),
+        ),
+        for (var i = 0; i < plan.routeStops.length; i++)
+          _DetailPhotoMarker(
+            stop: plan.routeStops[i],
+            photo: 'assets/images/photo-${(i % 7) + 1}.png',
+            color: i.isEven ? plan.accent : const Color(0xFFFF7A45),
+          ),
+      ],
+    );
+  }
+}
+
+class _DetailPhotoMarker extends StatelessWidget {
+  const _DetailPhotoMarker({
+    required this.stop,
+    required this.photo,
+    required this.color,
+  });
+
+  final RouteStop stop;
+  final String photo;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 24 + stop.position.dx * 280,
+      top: 52 + stop.position.dy * 190,
+      child: Container(
+        width: 52,
+        height: 52,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x22000000),
+              blurRadius: 12,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Image.asset(photo, fit: BoxFit.cover),
+            ),
+            Positioned(
+              right: -5,
+              bottom: -5,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(
+                  Icons.place_rounded,
+                  color: Colors.white,
+                  size: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapControlButton extends StatelessWidget {
+  const _MapControlButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 8,
+      shadowColor: const Color(0x22000000),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, size: 22, color: const Color(0xFF4F4F4F)),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailTipCard extends StatelessWidget {
+  const _DetailTipCard({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 20, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x16000000),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: plan.accent.withValues(alpha: .2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.tips_and_updates, color: plan.accent, size: 20),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                text: '浼樺厛浣撻獙${plan.routeStops[1].label}锛屽啀鍓嶅線',
+                children: [
+                  TextSpan(
+                    text: plan.routeStops.last.label,
+                    style: const TextStyle(
+                      color: Color(0xFF111111),
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const TextSpan(text: '锛岃妭濂忔洿鑸掓湇銆?'),
+                ],
+              ),
+              style: const TextStyle(
+                color: Color(0xFF6D6D6D),
+                fontSize: 14,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = plan.countdown == null ? '瀹岀編缁撴潫' : '鍊掕鏃?{plan.countdown}澶?';
+    final color = plan.countdown == null
+        ? const Color(0xFF999999)
+        : const Color(0xFFF7B733);
+    final bg = plan.countdown == null
+        ? const Color(0xFFF0F0F0)
+        : const Color(0xFFFFF4E5);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _Metric extends StatelessWidget {
+  const _Metric({required this.icon, required this.value});
+
+  final IconData icon;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFFB8B8B8)),
+        const SizedBox(width: 5),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 12, color: Color(0xFFA9A9A9)),
+        ),
+      ],
+    );
+  }
+}
+
+class RoutePreview extends StatelessWidget {
+  const RoutePreview({super.key, required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 122,
+        height: 97,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F7F6),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: CustomPaint(painter: _RouteMapPainter(plan)),
+      ),
+    );
+  }
+}
+
+class _RouteMapPainter extends CustomPainter {
+  const _RouteMapPainter(this.plan, {this.detailed = false});
+
+  final TravelPlan plan;
+  final bool detailed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()
+      ..color = detailed ? const Color(0xFFF7F8F7) : const Color(0xFFF5F7F5);
+    canvas.drawRect(Offset.zero & size, bgPaint);
+
+    final waterPaint = Paint()
+      ..color = detailed ? const Color(0xFFE9F1F5) : const Color(0xFFDCEFF7);
+    final water = Path()
+      ..moveTo(size.width * .56, -4)
+      ..cubicTo(
+        size.width * .82,
+        size.height * .08,
+        size.width * .72,
+        size.height * .32,
+        size.width + 8,
+        size.height * .42,
+      )
+      ..lineTo(size.width + 8, -4)
+      ..close();
+    canvas.drawPath(water, waterPaint);
+
+    final parkPaint = Paint()
+      ..color = detailed ? const Color(0xFFE9F4EC) : const Color(0xFFE2F1E6);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * .06, size.height * .1, 34, 24),
+        const Radius.circular(8),
+      ),
+      parkPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * .63, size.height * .62, 36, 26),
+        const Radius.circular(8),
+      ),
+      parkPaint,
+    );
+
+    final minorRoadPaint = Paint()
+      ..color = detailed ? const Color(0xFFE6EAEC) : const Color(0xFFE1E6E8)
+      ..strokeWidth = detailed ? 1.1 : 1.4
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 6; i++) {
+      final y = size.height * (.15 + i * .14);
+      canvas.drawLine(
+        Offset(-8, y),
+        Offset(size.width + 8, y + (i.isEven ? 10 : -6)),
+        minorRoadPaint,
+      );
+    }
+    for (var i = 0; i < 4; i++) {
+      final x = size.width * (.18 + i * .2);
+      canvas.drawLine(
+        Offset(x, -6),
+        Offset(x + 18, size.height + 6),
+        minorRoadPaint,
+      );
+    }
+
+    void drawRoad(List<Offset> points) {
+      final shadowPaint = Paint()
+        ..color = detailed ? const Color(0xFFDDE3E6) : const Color(0xFFD1D8DC)
+        ..strokeWidth = detailed ? 6 : 7
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      final roadPaint = Paint()
+        ..color = Colors.white
+        ..strokeWidth = detailed ? 4.2 : 5
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      final path = _pathFrom(points, size);
+      canvas.drawPath(path, shadowPaint);
+      canvas.drawPath(path, roadPaint);
+    }
+
+    drawRoad(const [
+      Offset(.02, .78),
+      Offset(.24, .56),
+      Offset(.44, .5),
+      Offset(.64, .36),
+      Offset(.96, .3),
+    ]);
+    drawRoad(const [
+      Offset(.08, .2),
+      Offset(.32, .38),
+      Offset(.58, .62),
+      Offset(.88, .86),
+    ]);
+    drawRoad(const [
+      Offset(.22, 1.04),
+      Offset(.42, .75),
+      Offset(.68, .5),
+      Offset(.88, .08),
+    ]);
+
+    final routeUnderlay = Paint()
+      ..color = Colors.white
+      ..strokeWidth = detailed ? 5 : 6
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final routePaint = Paint()
+      ..color = plan.accent
+      ..strokeWidth = detailed ? 2.4 : 3.4
+      ..strokeCap = StrokeCap.round;
+    final routePath = _pathFrom(
+      plan.routeStops.map((stop) => stop.position).toList(),
+      size,
+    );
+    canvas.drawPath(routePath, routeUnderlay);
+    canvas.drawPath(routePath, routePaint);
+
+    for (var i = 0; i < plan.routeStops.length; i++) {
+      final stop = plan.routeStops[i];
+      final point = Offset(
+        stop.position.dx * size.width,
+        stop.position.dy * size.height,
+      );
+      final isStart = i == 0;
+      final isEnd = i == plan.routeStops.length - 1;
+      final pinColor = isStart
+          ? const Color(0xFF24D391)
+          : isEnd
+          ? plan.accent
+          : Colors.white;
+
+      canvas.drawCircle(
+        point,
+        detailed ? 3.6 : (isStart || isEnd ? 5 : 4),
+        Paint()..color = Colors.white,
+      );
+      canvas.drawCircle(
+        point,
+        detailed ? 2.4 : (isStart || isEnd ? 3.6 : 2.7),
+        Paint()..color = pinColor,
+      );
+      if (!detailed && !isStart && !isEnd) {
+        canvas.drawCircle(
+          point,
+          3.4,
+          Paint()
+            ..color = plan.accent
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        );
+      }
+
+      if (!detailed && (i == 0 || i == plan.routeStops.length - 1)) {
+        _drawLabel(canvas, stop.label, point, size);
+      }
+    }
+  }
+
+  Path _pathFrom(List<Offset> points, Size size) {
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      final point = Offset(
+        points[i].dx * size.width,
+        points[i].dy * size.height,
+      );
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    return path;
+  }
+
+  void _drawLabel(Canvas canvas, String text, Offset point, Size size) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Color(0xFF46515A),
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          height: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 44);
+    final dx = (point.dx + 6).clamp(3.0, size.width - painter.width - 3);
+    final dy = (point.dy - 12).clamp(3.0, size.height - painter.height - 3);
+    final rect = Rect.fromLTWH(
+      dx - 3,
+      dy - 2,
+      painter.width + 6,
+      painter.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+      Paint()..color = Colors.white.withValues(alpha: .82),
+    );
+    painter.paint(canvas, Offset(dx, dy));
+  }
+
+  @override
+  bool shouldRepaint(covariant _RouteMapPainter oldDelegate) =>
+      oldDelegate.plan != plan || oldDelegate.detailed != detailed;
+}
+
+class ExplorePage extends StatefulWidget {
+  const ExplorePage({super.key});
+
+  @override
+  State<ExplorePage> createState() => _ExplorePageState();
+}
+
+class _ExplorePageState extends State<ExplorePage> {
+  String? _category;
+
+  @override
+  Widget build(BuildContext context) {
+    final pois = _category == null
+        ? demoPois
+        : demoPois.where((poi) => poi.category == _category).toList();
+
+    return Stack(
+      children: [
+        Positioned.fill(child: NativeMapView(pois: pois)),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _ExploreSearch(),
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final category in poiCategories)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _CategoryChip(
+                            category: category,
+                            active: _category == category.key,
+                            onTap: () => setState(() {
+                              _category = _category == category.key
+                                  ? null
+                                  : category.key;
+                            }),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class NativeMapView extends StatefulWidget {
+  const NativeMapView({super.key, required this.pois});
+
+  final List<Poi> pois;
+
+  @override
+  State<NativeMapView> createState() => _NativeMapViewState();
+}
+
+class _NativeMapViewState extends State<NativeMapView> {
+  static const MethodChannel _channel = MethodChannel('goplan/native_map');
+
+  @override
+  void didUpdateWidget(covariant NativeMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.pois, widget.pois)) {
+      _syncMarkers();
+    }
+  }
+
+  Future<void> _syncMarkers() async {
+    await _channel.invokeMethod(
+      'setMarkers',
+      widget.pois.map((poi) => poi.toJson()).toList(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return AmapWebView(
+        pois: widget.pois
+            .map(
+              (poi) => AmapWebPoi(
+                id: poi.id,
+                name: poi.name,
+                latitude: poi.latitude,
+                longitude: poi.longitude,
+                category: poi.category,
+              ),
+            )
+            .toList(),
+      );
+    }
+    if (_useMockMapPreview) {
+      return _MockExploreMap(pois: widget.pois);
+    }
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return AndroidView(
+        viewType: 'goplan/native_map_view',
+        creationParams: {
+          'pois': widget.pois.map((poi) => poi.toJson()).toList(),
+        },
+        creationParamsCodec: const StandardMessageCodec(),
+      );
+    }
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return UiKitView(
+        viewType: 'goplan/native_map_view',
+        creationParams: {
+          'pois': widget.pois.map((poi) => poi.toJson()).toList(),
+        },
+        creationParamsCodec: const StandardMessageCodec(),
+      );
+    }
+    return const _MapFallback();
+  }
+}
+
+class _MockExploreMap extends StatelessWidget {
+  const _MockExploreMap({required this.pois});
+
+  final List<Poi> pois;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(painter: _MockExploreMapPainter(pois)),
+            ),
+            for (final poi in pois)
+              Positioned(
+                left: _mapPoi(poi, size).dx - 11,
+                top: _mapPoi(poi, size).dy - 11,
+                child: _MockPoiMarker(poi: poi),
+              ),
+            Positioned(
+              left: 18,
+              right: 18,
+              bottom: 108,
+              child: _MockMapSummary(pois: pois),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MockPoiMarker extends StatelessWidget {
+  const _MockPoiMarker({required this.poi});
+
+  final Poi poi;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _poiColor(poi.category);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .14),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          constraints: const BoxConstraints(maxWidth: 74),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .9),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            poi.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Color(0xFF2F363A),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MockMapSummary extends StatelessWidget {
+  const _MockMapSummary({required this.pois});
+
+  final List<Poi> pois;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = pois.map((poi) => poi.category).toSet().length;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .92),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.route_rounded, color: Color(0xFF24D391), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Mock map 路 ${pois.length} POI 路 $categories categories',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF30363A),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const Icon(Icons.layers_rounded, color: Color(0xFF7E8B92), size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _MockExploreMapPainter extends CustomPainter {
+  const _MockExploreMapPainter(this.pois);
+
+  final List<Poi> pois;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFEAF1EC),
+    );
+
+    final water = Path()
+      ..moveTo(size.width * .72, 0)
+      ..cubicTo(
+        size.width * .98,
+        size.height * .18,
+        size.width * .72,
+        size.height * .42,
+        size.width * .94,
+        size.height * .72,
+      )
+      ..lineTo(size.width, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(water, Paint()..color = const Color(0xFFD7EDF6));
+
+    final parkPaint = Paint()..color = const Color(0xFFD8ECDD);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * .05, size.height * .2, 120, 78),
+        const Radius.circular(24),
+      ),
+      parkPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * .46, size.height * .58, 138, 88),
+        const Radius.circular(26),
+      ),
+      parkPaint,
+    );
+
+    _drawRoadGrid(canvas, size);
+    _drawRoute(canvas, size);
+  }
+
+  void _drawRoadGrid(Canvas canvas, Size size) {
+    final minor = Paint()
+      ..color = const Color(0xFFDCE3E2)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 10; i++) {
+      final y = size.height * (.08 + i * .1);
+      canvas.drawLine(
+        Offset(-20, y),
+        Offset(size.width + 20, y + (i.isEven ? 22 : -16)),
+        minor,
+      );
+    }
+    for (var i = 0; i < 7; i++) {
+      final x = size.width * (.06 + i * .16);
+      canvas.drawLine(Offset(x, -20), Offset(x + 34, size.height + 20), minor);
+    }
+
+    final highwayShadow = Paint()
+      ..color = const Color(0xFFC9D2D4)
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final highway = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 10
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      ..moveTo(-20, size.height * .72)
+      ..cubicTo(
+        size.width * .2,
+        size.height * .58,
+        size.width * .46,
+        size.height * .62,
+        size.width * .64,
+        size.height * .42,
+      )
+      ..cubicTo(
+        size.width * .78,
+        size.height * .26,
+        size.width * .88,
+        size.height * .2,
+        size.width + 24,
+        size.height * .16,
+      );
+    canvas.drawPath(path, highwayShadow);
+    canvas.drawPath(path, highway);
+  }
+
+  void _drawRoute(Canvas canvas, Size size) {
+    if (pois.length < 2) return;
+
+    final route = Path();
+    for (var i = 0; i < pois.length; i++) {
+      final point = _mapPoi(pois[i], size);
+      if (i == 0) {
+        route.moveTo(point.dx, point.dy);
+      } else {
+        route.lineTo(point.dx, point.dy);
+      }
+    }
+    canvas.drawPath(
+      route,
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 8
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke,
+    );
+    canvas.drawPath(
+      route,
+      Paint()
+        ..color = const Color(0xFF24D391)
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MockExploreMapPainter oldDelegate) =>
+      !listEquals(oldDelegate.pois, pois);
+}
+
+Offset _mapPoi(Poi poi, Size size) {
+  const minLat = 41.785;
+  const maxLat = 41.807;
+  const minLng = 123.425;
+  const maxLng = 123.459;
+  final x = ((poi.longitude - minLng) / (maxLng - minLng)).clamp(.08, .92);
+  final y = (1 - (poi.latitude - minLat) / (maxLat - minLat)).clamp(.16, .86);
+  return Offset(x * size.width, y * size.height);
+}
+
+Color _poiColor(String category) {
+  return switch (category) {
+    'food' => const Color(0xFFFFA629),
+    'hotel' => const Color(0xFF4EA9FF),
+    'shopping' => const Color(0xFFFF6BA6),
+    'transport' => const Color(0xFF7BC69C),
+    _ => const Color(0xFF24D391),
+  };
+}
+
+class _MapFallback extends StatelessWidget {
+  const _MapFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFE8F0E8),
+      alignment: Alignment.center,
+      child: const Text(
+        '鍘熺敓鍦板浘瑙嗗浘灏嗗湪 Android/iOS 璁惧涓婃樉绀?',
+        style: TextStyle(color: Color(0xFF4C4C4C)),
+      ),
+    );
+  }
+}
+
+class _ExploreSearch extends StatelessWidget {
+  const _ExploreSearch();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          Text(
+            '娌堥槼甯?',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          ),
+          Icon(Icons.keyboard_arrow_down, size: 16),
+          SizedBox(width: 12),
+          SizedBox(height: 20, child: VerticalDivider(width: 1)),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '鎼滅储鐩殑鍦?..',
+              style: TextStyle(fontSize: 14, color: Color(0xFFB7B7B7)),
+            ),
+          ),
+          Icon(Icons.search, color: Color(0xFF4C4C4C)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    required this.category,
+    required this.active,
+    required this.onTap,
+  });
+
+  final PoiCategory category;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF1C1C1E) : Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0F000000),
+              blurRadius: 8,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Image.asset(category.icon, width: 15, height: 15),
+            const SizedBox(width: 5),
+            Text(
+              category.label,
+              style: TextStyle(
+                fontSize: 12,
+                color: active ? Colors.white : const Color(0xFF777777),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PlaceholderPage extends StatelessWidget {
+  const PlaceholderPage({super.key, required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 48, color: const Color(0xFFCCCCCC)),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 16, color: Color(0xFF999999)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class BottomDock extends StatelessWidget {
+  const BottomDock({
+    super.key,
+    required this.current,
+    required this.onChanged,
+    required this.onCreatePlan,
+  });
+
+  final AppTab current;
+  final ValueChanged<AppTab> onChanged;
+  final VoidCallback onCreatePlan;
+
+  static const double _width = 258;
+  static const double _height = 81;
+  static const double _barTop = 23;
+  static const double _barHeight = 58;
+  static const double _activeSize = 32;
+  static const double _createSize = 45;
+  static const List<double> _buttonCenters = [31, 86, 172, 227];
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        width: _width,
+        height: _height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 0,
+              top: _barTop,
+              child: Image.asset(
+                'assets/icons/navigation.png',
+                width: _width,
+                height: _barHeight,
+                fit: BoxFit.fill,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              left: _buttonCenters[current.index] - (_activeSize / 2),
+              top: _barTop + 13,
+              child: Container(
+                width: _activeSize,
+                height: _activeSize,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF3C3C3C),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            for (final item in _DockButtonItem.items)
+              Positioned(
+                left: _buttonCenters[item.tab.index] - 24,
+                top: _barTop + 5,
+                child: _DockButton(
+                  item: item,
+                  active: current == item.tab,
+                  onChanged: onChanged,
+                ),
+              ),
+            Positioned(
+              left: (_width - _createSize) / 2,
+              top: 0,
+              child: _DockCreateButton(onPressed: onCreatePlan),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DockCreateButton extends StatelessWidget {
+  const _DockCreateButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkResponse(
+        onTap: onPressed,
+        radius: 28,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: BottomDock._createSize,
+          height: BottomDock._createSize,
+          child: Image.asset(
+            'assets/images/Group 61.png',
+            width: BottomDock._createSize,
+            height: BottomDock._createSize,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DockButton extends StatelessWidget {
+  const _DockButton({
+    required this.item,
+    required this.active,
+    required this.onChanged,
+  });
+
+  final _DockButtonItem item;
+  final bool active;
+  final ValueChanged<AppTab> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkResponse(
+        onTap: () => onChanged(item.tab),
+        radius: 24,
+        containedInkWell: true,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Center(
+            child: Image.asset(
+              item.asset,
+              width: item.width,
+              height: item.height,
+              color: active ? Colors.white : const Color(0xFF726E6E),
+              colorBlendMode: BlendMode.srcIn,
+              filterQuality: FilterQuality.none,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DockButtonItem {
+  const _DockButtonItem({
+    required this.tab,
+    required this.asset,
+    required this.width,
+    required this.height,
+  });
+
+  final AppTab tab;
+  final String asset;
+  final double width;
+  final double height;
+
+  static const items = [
+    _DockButtonItem(
+      tab: AppTab.home,
+      asset: 'assets/icons/nav-home-figma.png',
+      width: 12,
+      height: 12,
+    ),
+    _DockButtonItem(
+      tab: AppTab.explore,
+      asset: 'assets/icons/nav-map-figma.png',
+      width: 16,
+      height: 16,
+    ),
+    _DockButtonItem(
+      tab: AppTab.schedule,
+      asset: 'assets/icons/nav-calendar-figma.png',
+      width: 15,
+      height: 15,
+    ),
+    _DockButtonItem(
+      tab: AppTab.profile,
+      asset: 'assets/icons/nav-profile-figma.png',
+      width: 16,
+      height: 18,
+    ),
+  ];
+}
+
+class TravelPlan {
+  const TravelPlan({
+    required this.title,
+    required this.dateRange,
+    required this.places,
+    required this.members,
+    required this.days,
+    required this.accent,
+    required this.routeStops,
+    this.countdown,
+  });
+
+  final String title;
+  final String dateRange;
+  final int places;
+  final int members;
+  final int days;
+  final Color accent;
+  final List<RouteStop> routeStops;
+  final int? countdown;
+}
+
+class RouteStop {
+  const RouteStop({required this.label, required this.position});
+
+  final String label;
+  final Offset position;
+}
+
+const demoPlans = [
+  TravelPlan(
+    title: '闈掔敇澶х幆绾?0澶╂父',
+    dateRange: '2026.03.24~2026.04.01',
+    places: 15,
+    members: 4,
+    days: 10,
+    accent: Color(0xFF69A7FF),
+    routeStops: [
+      RouteStop(label: '瑗垮畞', position: Offset(.12, .64)),
+      RouteStop(label: '闈掓捣婀?', position: Offset(.32, .42)),
+      RouteStop(label: '鑼跺崱', position: Offset(.51, .48)),
+      RouteStop(label: '鏁︾厡', position: Offset(.7, .26)),
+      RouteStop(label: '寮犳帠', position: Offset(.9, .58)),
+    ],
+  ),
+  TravelPlan(
+    title: '宸濊タ闆北灏忓洟琛?',
+    dateRange: '2026.05.02~2026.05.07',
+    places: 12,
+    members: 6,
+    days: 6,
+    accent: Color(0xFF7BC69C),
+    routeStops: [
+      RouteStop(label: '鎴愰兘', position: Offset(.16, .7)),
+      RouteStop(label: '搴峰畾', position: Offset(.36, .54)),
+      RouteStop(label: '鏂伴兘妗?', position: Offset(.55, .42)),
+      RouteStop(label: '濉斿叕', position: Offset(.72, .53)),
+      RouteStop(label: '鍥涘濞樺北', position: Offset(.88, .28)),
+    ],
+  ),
+  TravelPlan(
+    title: '鏉窞鎯呬荆鍛ㄦ湯娓?',
+    dateRange: '2026.06.12~2026.06.14',
+    places: 8,
+    members: 2,
+    days: 3,
+    accent: Color(0xFFFFB35D),
+    routeStops: [
+      RouteStop(label: '瑗挎箹', position: Offset(.16, .35)),
+      RouteStop(label: '鐏甸殣', position: Offset(.32, .2)),
+      RouteStop(label: '娌冲潑琛?', position: Offset(.48, .48)),
+      RouteStop(label: '婊ㄦ睙', position: Offset(.66, .68)),
+      RouteStop(label: '閽辨睙', position: Offset(.86, .56)),
+    ],
+    countdown: 2,
+  ),
+  TravelPlan(
+    title: '浜戝崡鏈嬪弸姣曚笟鏃呰',
+    dateRange: '2026.07.18~2026.07.26',
+    places: 18,
+    members: 5,
+    days: 9,
+    accent: Color(0xFFC48BFF),
+    routeStops: [
+      RouteStop(label: '鏄嗘槑', position: Offset(.14, .72)),
+      RouteStop(label: '澶х悊', position: Offset(.34, .5)),
+      RouteStop(label: '涓芥睙', position: Offset(.55, .34)),
+      RouteStop(label: '娉告步婀?', position: Offset(.74, .42)),
+      RouteStop(label: '棣欐牸閲屾媺', position: Offset(.88, .18)),
+    ],
+    countdown: 38,
+  ),
+];
+
+class PoiCategory {
+  const PoiCategory({
+    required this.key,
+    required this.label,
+    required this.icon,
+  });
+
+  final String key;
+  final String label;
+  final String icon;
+}
+
+const poiCategories = [
+  PoiCategory(key: 'scenic', label: '鏅偣', icon: 'assets/icons/鏅偣.png'),
+  PoiCategory(key: 'food', label: '缇庨', icon: 'assets/icons/缇庨.png'),
+  PoiCategory(key: 'hotel', label: '浣忓', icon: 'assets/icons/浣忓.png'),
+  PoiCategory(key: 'shopping', label: '璐墿', icon: 'assets/icons/璐墿.png'),
+  PoiCategory(
+    key: 'transport',
+    label: '\u4ea4\u901a',
+    icon: 'assets/icons/\u4ea4\u901a.png',
+  ),
+];
+
+class Poi {
+  const Poi({
+    required this.id,
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    required this.category,
+  });
+
+  final String id;
+  final String name;
+  final double latitude;
+  final double longitude;
+  final String category;
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'name': name,
+    'latitude': latitude,
+    'longitude': longitude,
+    'category': category,
+  };
+}
+
+const demoPois = [
+  Poi(
+    id: '1',
+    name: '浜烘皯骞垮満',
+    latitude: 41.8003,
+    longitude: 123.4315,
+    category: 'scenic',
+  ),
+  Poi(
+    id: '2',
+    name: '甯傚簻鎭掗殕骞垮満',
+    latitude: 41.7959,
+    longitude: 123.4377,
+    category: 'shopping',
+  ),
+  Poi(
+    id: '3',
+    name: '娌堥槼鏁呭',
+    latitude: 41.7955,
+    longitude: 123.4498,
+    category: 'scenic',
+  ),
+  Poi(
+    id: '4',
+    name: '寮犳皬甯呭簻',
+    latitude: 41.7936,
+    longitude: 123.4510,
+    category: 'scenic',
+  ),
+  Poi(
+    id: '5',
+    name: '鍖楅櫟鍏洯',
+    latitude: 41.8268,
+    longitude: 123.4249,
+    category: 'scenic',
+  ),
+  Poi(
+    id: '6',
+    name: '涓姝ヨ琛?',
+    latitude: 41.7970,
+    longitude: 123.4525,
+    category: 'shopping',
+  ),
+  Poi(
+    id: '7',
+    name: '鑰佽竟楗哄瓙',
+    latitude: 41.7978,
+    longitude: 123.4480,
+    category: 'food',
+  ),
+  Poi(
+    id: '8',
+    name: '娌堥槼绔?',
+    latitude: 41.7890,
+    longitude: 123.4100,
+    category: 'transport',
+  ),
+  Poi(
+    id: '9',
+    name: '涓囪揪鏂囧崕閰掑簵',
+    latitude: 41.7920,
+    longitude: 123.4420,
+    category: 'hotel',
+  ),
+];

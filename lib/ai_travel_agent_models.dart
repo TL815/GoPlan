@@ -62,8 +62,20 @@ class TravelAgentDay {
   final String notes;
 }
 
+class AiTravelAgentReply {
+  const AiTravelAgentReply({
+    required this.replyText,
+    this.plan,
+    this.requestStartDate = false,
+  });
+
+  final String replyText;
+  final TravelAgentResult? plan;
+  final bool requestStartDate;
+}
+
 abstract class AiTravelAgent {
-  Future<TravelAgentResult> planTrip(
+  Future<AiTravelAgentReply> planTrip(
     String prompt, {
     List<AiTravelAgentTurn> history = const [],
   });

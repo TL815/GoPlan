@@ -1,0 +1,90 @@
+﻿{
+    "name":  "GoPlan",
+    "lastModified":  "2026-07-07T06:56:28Z",
+    "thumbnailUrl":  "https://s3-alpha.figma.com/thumbnails/47d4a895-1934-496a-8aa9-6cc8135bf235?X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIAQ4GOSFWCZHCZBGZX%2F20260705%2Fus-west-2%2Fs3%2Faws4_request\u0026X-Amz-Date=20260705T120000Z\u0026X-Amz-Expires=604800\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Signature=273b22c04f61952bc85bcd6ac0d412fba607ab906fa14755740a9aed187d5d2a",
+    "version":  "2373370861261906954",
+    "role":  "owner",
+    "editorType":  "figma",
+    "linkAccess":  "view",
+    "nodes":  {
+                  "1243:328":  {
+                                   "document":  {
+                                                    "id":  "1243:328",
+                                                    "name":  "Rectangle 6",
+                                                    "type":  "RECTANGLE",
+                                                    "scrollBehavior":  "SCROLLS",
+                                                    "blendMode":  "PASS_THROUGH",
+                                                    "fills":  [
+                                                                  {
+                                                                      "blendMode":  "NORMAL",
+                                                                      "type":  "SOLID",
+                                                                      "color":  {
+                                                                                    "r":  1.0,
+                                                                                    "g":  1.0,
+                                                                                    "b":  1.0,
+                                                                                    "a":  1.0
+                                                                                }
+                                                                  }
+                                                              ],
+                                                    "strokes":  [
+
+                                                                ],
+                                                    "strokeWeight":  1.0,
+                                                    "strokeAlign":  "INSIDE",
+                                                    "cornerRadius":  10.0,
+                                                    "cornerSmoothing":  0.0,
+                                                    "absoluteBoundingBox":  {
+                                                                                "x":  489.0,
+                                                                                "y":  291.0,
+                                                                                "width":  356.0,
+                                                                                "height":  120.0
+                                                                            },
+                                                    "absoluteRenderBounds":  {
+                                                                                 "x":  481.10000610351562,
+                                                                                 "y":  281.10000610351562,
+                                                                                 "width":  371.80001831054688,
+                                                                                 "height":  135.79998779296875
+                                                                             },
+                                                    "constraints":  {
+                                                                        "vertical":  "TOP",
+                                                                        "horizontal":  "LEFT"
+                                                                    },
+                                                    "effects":  [
+                                                                    {
+                                                                        "type":  "DROP_SHADOW",
+                                                                        "visible":  true,
+                                                                        "color":  {
+                                                                                      "r":  0.90769225358963013,
+                                                                                      "g":  0.90681940317153931,
+                                                                                      "b":  0.90681940317153931,
+                                                                                      "a":  0.250
+                                                                                  },
+                                                                        "blendMode":  "NORMAL",
+                                                                        "offset":  {
+                                                                                       "x":  0.0,
+                                                                                       "y":  -2.0
+                                                                                   },
+                                                                        "radius":  7.9000000953674316,
+                                                                        "showShadowBehindNode":  false
+                                                                    }
+                                                                ],
+                                                    "interactions":  [
+
+                                                                     ],
+                                                    "complexStrokeProperties":  {
+                                                                                    "strokeType":  "BASIC"
+                                                                                }
+                                                },
+                                   "components":  {
+
+                                                  },
+                                   "componentSets":  {
+
+                                                     },
+                                   "schemaVersion":  0,
+                                   "styles":  {
+
+                                              }
+                               }
+              }
+}

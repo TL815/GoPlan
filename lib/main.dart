@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'ai_travel_agent.dart';
+import 'models/ai_conversation.dart';
+import 'services/conversation_service.dart';
 import 'services/weather_service.dart';
+import 'services/qweather_service.dart';
+import 'widgets/weather_sheet.dart';
 import 'amap_photo_service_stub.dart'
     if (dart.library.io) 'amap_photo_service_io.dart';
 import 'amap_web_view_stub.dart'
@@ -187,6 +193,12 @@ class _GoPlanShellState extends State<GoPlanShell> {
   bool _showHome = false;
   AppTab _tab = AppTab.home;
 
+  void _openCreatePlan() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const _AiChatPage()));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_showHome) {
@@ -220,6 +232,7 @@ class _GoPlanShellState extends State<GoPlanShell> {
             child: BottomDock(
               current: _tab,
               onChanged: (tab) => setState(() => _tab = tab),
+              onCreatePlan: _openCreatePlan,
             ),
           ),
         ],
@@ -236,63 +249,51 @@ class LoadingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final showLegacyLoadingArtwork = false;
 
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset('assets/images/loading-bg.png', fit: BoxFit.cover),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.white, Color(0x99FFFFFF), Color(0x00FFFFFF)],
-                stops: [0, 0.28, 0.52],
+          Image.asset('assets/images/background.png', fit: BoxFit.cover),
+          if (showLegacyLoadingArtwork) ...[
+            Positioned(
+              left: size.width * 0.29,
+              top: size.height * 0.10,
+              child: RotatedBox(
+                quarterTurns: 0,
+                child: Transform.rotate(
+                  angle: 0.18,
+                  child: _TravelPoster(
+                    asset: 'assets/images/卡片一.png',
+                    width: size.width * 0.92,
+                  ),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: 34,
-            top: size.height * 0.09,
-            child: Image.asset('assets/images/GoPlan.png', width: 156),
-          ),
-          Positioned(
-            left: size.width * 0.29,
-            top: size.height * 0.10,
-            child: RotatedBox(
-              quarterTurns: 0,
+            Positioned(
+              left: size.width * 0.05,
+              top: size.height * 0.32,
               child: Transform.rotate(
-                angle: 0.18,
+                angle: -0.34,
                 child: _TravelPoster(
-                  asset: 'assets/images/卡片一.png',
+                  asset: 'assets/images/卡片二.png',
+                  width: size.width * 0.94,
+                ),
+              ),
+            ),
+            Positioned(
+              left: size.width * 0.36,
+              top: size.height * 0.52,
+              child: Transform.rotate(
+                angle: 0.36,
+                child: _TravelPoster(
+                  asset: 'assets/images/卡片三.png',
                   width: size.width * 0.92,
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: size.width * 0.05,
-            top: size.height * 0.32,
-            child: Transform.rotate(
-              angle: -0.34,
-              child: _TravelPoster(
-                asset: 'assets/images/卡片二.png',
-                width: size.width * 0.94,
-              ),
-            ),
-          ),
-          Positioned(
-            left: size.width * 0.36,
-            top: size.height * 0.52,
-            child: Transform.rotate(
-              angle: 0.36,
-              child: _TravelPoster(
-                asset: 'assets/images/卡片三.png',
-                width: size.width * 0.92,
-              ),
-            ),
-          ),
+          ],
           Positioned(
             left: 32,
             right: 32,
@@ -371,30 +372,96 @@ class _GoPill extends StatelessWidget {
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  bool _showExplore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ConversationService.instance.addListener(_onConversationsChanged);
+  }
+
+  @override
+  void dispose() {
+    ConversationService.instance.removeListener(_onConversationsChanged);
+    super.dispose();
+  }
+
+  void _onConversationsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final conversations = ConversationService.instance.conversations;
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 18, 18, 112),
         children: [
           const _HomeTopSection(),
-          const _PlanFilters(),
+          _PlanFilters(
+            activeTab: _showExplore ? 1 : 0,
+            onTabChanged: (index) => setState(() => _showExplore = index == 1),
+          ),
           const SizedBox(height: 12),
-          ...demoPlans.map(
-            (plan) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: PlanCard(
-                plan: plan,
-                onTap: () => _openPlanDetail(context, plan),
+          if (_showExplore)
+            ..._buildExploreContent(conversations)
+          else
+            ...demoPlans.map(
+              (plan) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: PlanCard(
+                  plan: plan,
+                  onTap: () => _openPlanDetail(context, plan),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildExploreContent(List<AiConversation> conversations) {
+    if (conversations.isEmpty) {
+      return const [_ExploreEmptyState()];
+    }
+    final widgets = <Widget>[];
+    var lastWasPinned = false;
+    for (final conv in conversations) {
+      // 置顶与非置顶之间插入分隔
+      if (!conv.isPinned && lastWasPinned) {
+        widgets.add(const SizedBox(height: 4));
+        widgets.add(
+          const Padding(
+            padding: EdgeInsets.only(bottom: 14),
+            child: Text(
+              '历史对话',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFFBBBBBB),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        );
+      }
+      lastWasPinned = conv.isPinned;
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _ConversationCard(conversation: conv),
+        ),
+      );
+    }
+    return widgets;
   }
 }
 
@@ -402,7 +469,7 @@ void _openPlanDetail(BuildContext context, TravelPlan plan) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    useSafeArea: true,
+    useSafeArea: false,
     backgroundColor: Colors.transparent,
     builder: (context) => PlanDetailDrawer(plan: plan),
   );
@@ -446,7 +513,7 @@ class _HomeHeader extends StatelessWidget {
       children: [
         const CircleAvatar(
           radius: 20,
-          backgroundImage: AssetImage('assets/images/我的.png'),
+          child: Icon(Icons.person, color: Colors.white),
         ),
         const SizedBox(width: 10),
         const Expanded(
@@ -518,9 +585,17 @@ class _WeatherSummaryState extends State<_WeatherSummary> {
     }
   }
 
+  void _openWeatherSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _WeatherSheetContent(city: _weather?.city ?? ''),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 加载中显示骨架
     if (_loading) {
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -549,20 +624,119 @@ class _WeatherSummaryState extends State<_WeatherSummary> {
     final tempText = _weather?.temperatureRange ?? '21℃~36℃';
     final iconAsset = _weather?.weatherIconAsset ?? 'assets/icons/晴天.png';
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          tempText,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Color(0xFF8D8D8D),
-            fontWeight: FontWeight.w800,
+    return GestureDetector(
+      onTap: _openWeatherSheet,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            tempText,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF8D8D8D),
+              fontWeight: FontWeight.w800,
+            ),
           ),
+          const SizedBox(width: 8),
+          Image.asset(iconAsset, width: 30),
+        ],
+      ),
+    );
+  }
+}
+
+/// 天气半屏抽屉的内容（异步加载和风天气数据）
+class _WeatherSheetContent extends StatefulWidget {
+  const _WeatherSheetContent({required this.city});
+  final String city;
+
+  @override
+  State<_WeatherSheetContent> createState() => _WeatherSheetContentState();
+}
+
+class _WeatherSheetContentState extends State<_WeatherSheetContent> {
+  QWeather7Day? _forecast;
+  QWeatherNow? _now;
+  String _cityName = '';
+  String? _weatherError;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      debugPrint('QWeather sheet: loading for city "${widget.city}"');
+      // 先搜城市获取 locationId
+      final city = await QWeatherService.searchCity(
+        widget.city.isNotEmpty ? widget.city : '沈阳',
+      );
+      final locationId = city?.id ?? '101070101'; // 默认沈阳
+      debugPrint(
+        'QWeather sheet: city name=${city?.name}, id=${city?.id}, fallback=$locationId',
+      );
+
+      final results = await Future.wait([
+        QWeatherService.fetch7DayForecast(locationId),
+        QWeatherService.fetchNow(locationId),
+      ]);
+
+      final forecast = results[0] as QWeather7Day?;
+      final now = results[1] as QWeatherNow?;
+      debugPrint(
+        'QWeather sheet: forecast days=${forecast?.days.length}, now temp=${now?.temp}',
+      );
+
+      if (mounted) {
+        setState(() {
+          _forecast = forecast;
+          _now = now;
+          _cityName = city?.name ?? widget.city;
+          _weatherError = forecast == null && now == null
+              ? QWeatherService.lastError
+              : null;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('QWeather sheet ERROR: $e');
+      if (mounted) {
+        setState(() {
+          _weatherError = '$e';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        height: 340,
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7F8F7),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x24000000),
+              blurRadius: 28,
+              offset: Offset(0, 14),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Image.asset(iconAsset, width: 30),
-      ],
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return WeatherDrawer(
+      forecast: _forecast,
+      now: _now,
+      cityName: _cityName,
+      errorMessage: _weatherError,
     );
   }
 }
@@ -664,15 +838,16 @@ class _AiChatPageState extends State<_AiChatPage> {
 
     try {
       final history = List<AiTravelAgentTurn>.of(_agentHistory);
-      final plan = await _agent.planTrip(text, history: history);
+      final reply = await _agent.planTrip(text, history: history);
       if (!mounted) return;
-      final assistantText = plan.toChatText();
+      final assistantText = reply.replyText;
       setState(() {
         _messages.add(
           _AiChatMessage(
             role: _AiChatRole.assistant,
             text: assistantText,
-            plan: plan,
+            plan: reply.plan,
+            requestStartDate: reply.requestStartDate,
           ),
         );
         _agentHistory
@@ -685,6 +860,15 @@ class _AiChatPageState extends State<_AiChatPage> {
           );
         _isThinking = false;
       });
+      // 保存对话到探索页
+      ConversationService.instance.addConversation(
+        userQuery: text,
+        messages: [
+          ConvMessage(role: 'user', content: text),
+          ConvMessage(role: 'assistant', content: assistantText),
+        ],
+        result: reply.plan,
+      );
     } on AiTravelAgentException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -738,7 +922,11 @@ class _AiChatPageState extends State<_AiChatPage> {
                     if (_messages.isEmpty && !_isThinking)
                       _AiChatEmptyState(onPromptSelected: _send),
                     for (final message in _messages)
-                      _AiMessageBubble(message: message),
+                      _AiMessageBubble(
+                        message: message,
+                        onStartDateSelected: (date) =>
+                            _send(_formatStartDateMessage(date)),
+                      ),
                     if (_isThinking) const _AiThinkingBubble(),
                   ],
                 ),
@@ -872,17 +1060,15 @@ class _AiChatEmptyState extends StatelessWidget {
             children: [
               _AiPromptChip(
                 text: '川西雪山 6 天',
-                onTap: () =>
-                    onPromptSelected('从成都出发，帮我规划川西雪山小环线 6 天，节奏舒适，适合第一次去。'),
+                onTap: () => onPromptSelected('从成都出发，帮我规划川西雪山小环线 6 天，节奏舒适。'),
               ),
               _AiPromptChip(
                 text: '杭州周末情侣游',
-                onTap: () => onPromptSelected('帮我规划杭州 2 天情侣周末游，想要西湖、咖啡、轻松拍照。'),
+                onTap: () => onPromptSelected('帮我规划杭州 2 天情侣周末游，想要西湖、咖啡和轻松拍照。'),
               ),
               _AiPromptChip(
                 text: '云南毕业旅行',
-                onTap: () =>
-                    onPromptSelected('帮我规划云南 8 天毕业旅行，4 个人，喜欢美食、古城和自然风景。'),
+                onTap: () => onPromptSelected('帮我规划云南 8 天毕业旅行，4 个人，喜欢美食和自然风景。'),
               ),
             ],
           ),
@@ -923,9 +1109,13 @@ class _AiPromptChip extends StatelessWidget {
 }
 
 class _AiMessageBubble extends StatelessWidget {
-  const _AiMessageBubble({required this.message});
+  const _AiMessageBubble({
+    required this.message,
+    required this.onStartDateSelected,
+  });
 
   final _AiChatMessage message;
+  final ValueChanged<DateTime> onStartDateSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -951,8 +1141,62 @@ class _AiMessageBubble extends StatelessWidget {
         children: [
           const _AiOrb(size: 20),
           const SizedBox(width: 10),
-          Flexible(child: bubble),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                bubble,
+                if (message.requestStartDate) ...[
+                  const SizedBox(height: 10),
+                  _AiStartDatePickerCard(onSelected: onStartDateSelected),
+                ],
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _AiStartDatePickerCard extends StatelessWidget {
+  const _AiStartDatePickerCard({required this.onSelected});
+
+  final ValueChanged<DateTime> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * .78,
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x16000000),
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF18C777),
+            primary: const Color(0xFF18C777),
+          ),
+        ),
+        child: CalendarDatePicker(
+          initialDate: today,
+          firstDate: today,
+          lastDate: DateTime(today.year + 2, today.month, today.day),
+          onDateChanged: onSelected,
+        ),
       ),
     );
   }
@@ -965,26 +1209,24 @@ class _AiTextBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isUser = message.role == _AiChatRole.user;
     return Container(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.sizeOf(context).width * .7,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(13),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
+      padding: isUser
+          ? const EdgeInsets.symmetric(horizontal: 15, vertical: 12)
+          : EdgeInsets.zero,
+      decoration: isUser
+          ? BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(13),
+            )
+          : null,
       child: Text(
         message.text,
-        style: const TextStyle(
-          color: Color(0xFF202426),
+        style: TextStyle(
+          color: isUser ? Colors.white : const Color(0xFF202426),
           fontSize: 14,
           height: 1.42,
           fontWeight: FontWeight.w600,
@@ -1238,11 +1480,21 @@ class _AiOrb extends StatelessWidget {
 enum _AiChatRole { user, assistant }
 
 class _AiChatMessage {
-  const _AiChatMessage({required this.role, required this.text, this.plan});
+  const _AiChatMessage({
+    required this.role,
+    required this.text,
+    this.plan,
+    this.requestStartDate = false,
+  });
 
   final _AiChatRole role;
   final String text;
   final TravelAgentResult? plan;
+  final bool requestStartDate;
+}
+
+String _formatStartDateMessage(DateTime date) {
+  return '出发日期：${date.year}年${date.month}月${date.day}日。';
 }
 
 class _PhotoStrip extends StatelessWidget {
@@ -1259,9 +1511,10 @@ class _PhotoStrip extends StatelessWidget {
         }
 
         final photos = snapshot.data ?? const [];
-        return _PhotoStripStack(
-          photos: photos.isEmpty ? _fallbackHomePhotoItems : photos,
-        );
+        if (photos.isEmpty) {
+          return const SizedBox(height: 92);
+        }
+        return _PhotoStripStack(photos: photos);
       },
     );
   }
@@ -1399,23 +1652,15 @@ class _HomePhotoCard extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(11),
             clipBehavior: Clip.antiAlias,
-            child: item.isNetwork
-                ? Image.network(
-                    item.image,
-                    width: 60,
-                    height: 54,
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.high,
-                    errorBuilder: (_, _, _) =>
-                        const _AmapImageErrorPlaceholder(compact: true),
-                  )
-                : Image.asset(
-                    item.image,
-                    width: 60,
-                    height: 54,
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.high,
-                  ),
+            child: Image.network(
+              item.image,
+              width: 60,
+              height: 54,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) =>
+                  const _AmapImageErrorPlaceholder(compact: true),
+            ),
           ),
         ),
       ),
@@ -1470,7 +1715,7 @@ void _showHomePhotoSpotSheet(
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    useSafeArea: true,
+    useSafeArea: false,
     backgroundColor: Colors.transparent,
     builder: (context) => _HomePhotoSpotSheet(item: item),
   );
@@ -1488,6 +1733,7 @@ class _HomePhotoSpotSheet extends StatefulWidget {
 class _HomePhotoSpotSheetState extends State<_HomePhotoSpotSheet> {
   late final DraggableScrollableController _controller;
   bool _isFullScreen = false;
+  bool _isPromotingToPage = false;
 
   @override
   void initState() {
@@ -1504,6 +1750,19 @@ class _HomePhotoSpotSheetState extends State<_HomePhotoSpotSheet> {
   }
 
   void _handleChanged() {
+    if (_controller.size > .955 && !_isPromotingToPage) {
+      _isPromotingToPage = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => _HomePhotoSpotFullPage(item: widget.item),
+          ),
+        );
+      });
+      return;
+    }
+
     final next = _controller.size > .92;
     if (next != _isFullScreen) setState(() => _isFullScreen = next);
   }
@@ -1519,161 +1778,595 @@ class _HomePhotoSpotSheetState extends State<_HomePhotoSpotSheet> {
       snap: true,
       snapSizes: const [.62, 1],
       builder: (context, scrollController) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(14, 0, 14, _isFullScreen ? 0 : 14),
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7F8F7),
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(_isFullScreen ? 0 : 30),
-                bottom: Radius.circular(_isFullScreen ? 0 : 30),
+        final topPadding = _isFullScreen
+            ? MediaQuery.viewPaddingOf(context).top + 6.0
+            : 14.0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8F7),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(_isFullScreen ? 0 : 30),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 28,
+                      offset: Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: _HomePhotoSpotContent(
+                  item: widget.item,
+                  controller: scrollController,
+                  topPadding: topPadding,
+                  showHandle: false,
+                  showClose: _isFullScreen,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
               ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 28,
-                  offset: Offset(0, 14),
-                ),
-              ],
             ),
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+            if (!_isFullScreen) const _SheetTopGrip(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HomePhotoSpotFullPage extends StatelessWidget {
+  const _HomePhotoSpotFullPage({required this.item});
+
+  final _HomePhotoItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SafeFullPageScaffold(
+      backgroundColor: const Color(0xFFF7F8F7),
+      onClose: () => Navigator.of(context).pop(),
+      child: _HomePhotoSpotContent(
+        item: item,
+        showHandle: false,
+        showClose: false,
+        onClose: () => Navigator.of(context).pop(),
+      ),
+    );
+  }
+}
+
+class _HomePhotoSpotContent extends StatelessWidget {
+  const _HomePhotoSpotContent({
+    required this.item,
+    required this.showHandle,
+    required this.showClose,
+    required this.onClose,
+    this.controller,
+    this.topPadding,
+  });
+
+  final _HomePhotoItem item;
+  final ScrollController? controller;
+  final bool showHandle;
+  final bool showClose;
+  final VoidCallback onClose;
+  final double? topPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final poiFacts = _poiFactItems(item);
+    final galleryUrls = _homePhotoGalleryUrls(item);
+    // 合并顶部大图和底部缩略图，形成轮播列表
+    final carouselUrls = [item.image, ...galleryUrls];
+    return ListView(
+      controller: controller,
+      padding: EdgeInsets.fromLTRB(14, topPadding ?? 14, 14, 22),
+      children: [
+        _PhotoCarousel(
+          urls: carouselUrls,
+          height: 180,
+          showClose: showClose,
+          onClose: onClose,
+        ),
+        const SizedBox(height: 18),
+        Text(
+          item.spot.name,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF111111),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(
+              Icons.location_on_outlined,
+              size: 15,
+              color: Color(0xFF8C9490),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              item.spot.city,
+              style: const TextStyle(
+                color: Color(0xFF7D8581),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final tag in item.spot.tags) _SpotTag(label: tag)],
+        ),
+        if (poiFacts.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _HomePhotoPoiFacts(facts: poiFacts),
+        ],
+        const SizedBox(height: 16),
+        Text(
+          _homePhotoSpotDescription(item),
+          style: const TextStyle(
+            color: Color(0xFF555E5A),
+            fontSize: 14,
+            height: 1.55,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _HomePhotoSpotTip(tip: item.spot.tip),
+      ],
+    );
+  }
+}
+
+class _PhotoCarousel extends StatefulWidget {
+  const _PhotoCarousel({
+    required this.urls,
+    required this.height,
+    this.showClose = false,
+    this.onClose,
+  });
+
+  final List<String> urls;
+  final double height;
+  final bool showClose;
+  final VoidCallback? onClose;
+
+  @override
+  State<_PhotoCarousel> createState() => _PhotoCarouselState();
+}
+
+class _PhotoCarouselState extends State<_PhotoCarousel> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.urls.length <= 1) {
+      // 只有一张图时直接显示
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: SizedBox(
+          height: widget.height,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _CarouselImage(url: widget.urls.first),
+              if (widget.showClose && widget.onClose != null)
+                Positioned(
+                  right: 12,
+                  top: 12,
+                  child: _HeroCloseButton(onPressed: widget.onClose!),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: SizedBox(
+            height: widget.height,
+            width: double.infinity,
+            child: Stack(
               children: [
-                const _SheetDragHandle(),
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: SizedBox(
-                        height: 180,
-                        width: double.infinity,
-                        child: widget.item.isNetwork
-                            ? Image.network(
-                                widget.item.image,
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.high,
-                                errorBuilder: (_, _, _) =>
-                                    const _AmapImageErrorPlaceholder(),
-                              )
-                            : Image.asset(widget.item.image, fit: BoxFit.cover),
-                      ),
-                    ),
-                    if (_isFullScreen)
-                      Positioned(
-                        right: 12,
-                        top: 12,
-                        child: IconButton.filled(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(
-                              alpha: .92,
-                            ),
-                            foregroundColor: const Color(0xFF222222),
-                          ),
-                          icon: const Icon(Icons.close_rounded, size: 20),
-                        ),
-                      ),
-                  ],
+                PageView.builder(
+                  controller: _pageController,
+                  onPageChanged: (page) => setState(() => _currentPage = page),
+                  itemCount: widget.urls.length,
+                  itemBuilder: (context, index) {
+                    return _CarouselImage(url: widget.urls[index]);
+                  },
                 ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        widget.item.spot.name,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF111111),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.location_on_outlined,
-                      size: 15,
-                      color: Color(0xFF8C9490),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      widget.item.spot.city,
-                      style: const TextStyle(
-                        color: Color(0xFF7D8581),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final tag in widget.item.spot.tags)
-                      _SpotTag(label: tag),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  widget.item.spot.description,
-                  style: const TextStyle(
-                    color: Color(0xFF555E5A),
-                    fontSize: 14,
-                    height: 1.55,
-                    fontWeight: FontWeight.w600,
+                if (widget.showClose && widget.onClose != null)
+                  Positioned(
+                    right: 12,
+                    top: 12,
+                    child: _HeroCloseButton(onPressed: widget.onClose!),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
+                // 页码指示器
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 12,
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFE8FFF3),
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      widget.urls.length,
+                      (index) => Container(
+                        width: 6,
+                        height: 6,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.tips_and_updates_outlined,
-                          size: 17,
-                          color: Color(0xFF18C777),
+                          color: _currentPage == index
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.45),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          widget.item.spot.tip,
-                          style: const TextStyle(
-                            color: Color(0xFF5E6662),
-                            fontSize: 13,
-                            height: 1.45,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ),
+      ],
+    );
+  }
+}
+
+class _CarouselImage extends StatelessWidget {
+  const _CarouselImage({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (_, _, _) => const _AmapImageErrorPlaceholder(),
+    );
+  }
+}
+
+class _HomePhotoSpotHero extends StatelessWidget {
+  const _HomePhotoSpotHero({required this.item, this.onClose});
+
+  final _HomePhotoItem item;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 180,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              item.image,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) => const _AmapImageErrorPlaceholder(),
+            ),
+            if (onClose != null)
+              Positioned(
+                right: 12,
+                top: 12,
+                child: _HeroCloseButton(onPressed: onClose!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomePhotoGallery extends StatelessWidget {
+  const _HomePhotoGallery({required this.urls});
+
+  final List<String> urls;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              urls[index],
+              width: 78,
+              height: 58,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) =>
+                  const _AmapImageErrorPlaceholder(compact: true),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+List<String> _homePhotoGalleryUrls(_HomePhotoItem item) {
+  final urls = item.amapSpot?.photoUrls ?? const <String>[];
+  if (urls.isEmpty) return [item.image];
+  return urls.take(8).toList(growable: false);
+}
+
+class _HomePhotoSpotTip extends StatelessWidget {
+  const _HomePhotoSpotTip({required this.tip});
+
+  final String tip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE8FFF3),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.tips_and_updates_outlined,
+              size: 17,
+              color: Color(0xFF18C777),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              tip,
+              style: const TextStyle(
+                color: Color(0xFF5E6662),
+                fontSize: 13,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomePhotoPoiFacts extends StatelessWidget {
+  const _HomePhotoPoiFacts({required this.facts});
+
+  final List<_PoiFact> facts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '高德 POI 信息',
+            style: TextStyle(
+              color: Color(0xFF151515),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < facts.length; i++) ...[
+            _PoiFactRow(fact: facts[i]),
+            if (i != facts.length - 1)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Divider(height: 1, color: Color(0xFFEDEDED)),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PoiFactRow extends StatelessWidget {
+  const _PoiFactRow({required this.fact});
+
+  final _PoiFact fact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(fact.icon, size: 18, color: const Color(0xFF19B96D)),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 58,
+          child: Text(
+            fact.label,
+            style: const TextStyle(
+              color: Color(0xFF8A8F8C),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            fact.value,
+            style: const TextStyle(
+              color: Color(0xFF343A37),
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PoiFact {
+  const _PoiFact({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+}
+
+List<_PoiFact> _poiFactItems(_HomePhotoItem item) {
+  final amapFacts = _amapPoiFactItems(item.amapSpot);
+  if (amapFacts.isNotEmpty) return amapFacts;
+
+  return [
+    _PoiFact(icon: Icons.info_outline, label: '来源', value: '高德 POI'),
+    _PoiFact(
+      icon: Icons.location_city_outlined,
+      label: '区域',
+      value: item.spot.city,
+    ),
+    if (item.spot.tags.isNotEmpty)
+      _PoiFact(
+        icon: Icons.local_offer_outlined,
+        label: '鏍囩',
+        value: item.spot.tags.join(' / '),
+      ),
+  ];
+}
+
+List<_PoiFact> _amapPoiFactItems(AmapPhotoSpot? spot) {
+  if (spot == null) return const [];
+
+  final facts = <_PoiFact>[
+    if (spot.rating.isNotEmpty)
+      _PoiFact(icon: Icons.star_rounded, label: '评分', value: spot.rating),
+    if (spot.openTime.isNotEmpty)
+      _PoiFact(
+        icon: Icons.access_time_rounded,
+        label: '开放',
+        value: spot.openTime,
+      ),
+    if (spot.cost.isNotEmpty)
+      _PoiFact(
+        icon: Icons.confirmation_number_outlined,
+        label: '价格',
+        value: spot.cost,
+      ),
+    if (spot.tel.isNotEmpty)
+      _PoiFact(icon: Icons.phone_outlined, label: '电话', value: spot.tel),
+    if (spot.businessArea.isNotEmpty)
+      _PoiFact(
+        icon: Icons.storefront_outlined,
+        label: '商圈',
+        value: spot.businessArea,
+      ),
+    if (spot.address.isNotEmpty)
+      _PoiFact(icon: Icons.place_outlined, label: '地址', value: spot.address),
+    if (spot.website.isNotEmpty)
+      _PoiFact(icon: Icons.public_outlined, label: '官网', value: spot.website),
+    if (spot.location.isNotEmpty)
+      _PoiFact(
+        icon: Icons.gps_fixed_outlined,
+        label: '坐标',
+        value: spot.location,
+      ),
+    if (spot.photoUrls.length > 1)
+      _PoiFact(
+        icon: Icons.photo_library_outlined,
+        label: '图片',
+        value: '${spot.photoUrls.length} 张',
+      ),
+  ];
+
+  return facts.take(8).toList(growable: false);
+}
+
+String _homePhotoSpotDescription(_HomePhotoItem item) {
+  final spot = item.amapSpot;
+  if (spot == null) {
+    return '${item.spot.name}\u5f53\u524d\u5c55\u793a\u672c\u5730\u515c\u5e95\u5185\u5bb9\u3002${item.spot.description}';
+  }
+
+  final address = spot.address.isEmpty ? spot.city : spot.address;
+  final parts = <String>[
+    '${spot.name}\u4f4d\u4e8e$address\u3002',
+    if (spot.category.isNotEmpty)
+      '\u9ad8\u5fb7\u5206\u7c7b\u4e3a${spot.category}\u3002',
+    if (spot.rating.isNotEmpty)
+      '\u5f53\u524d POI \u8bc4\u5206\u4e3a${spot.rating}\u3002',
+    if (spot.openTime.isNotEmpty)
+      '\u5f00\u653e\u65f6\u95f4\u4e3a${spot.openTime}\u3002',
+  ];
+  parts.add('\u8fd9\u4e9b\u4fe1\u606f\u6765\u81ea\u9ad8\u5fb7 POI\u3002');
+  return parts.join();
+}
+
+String _compactAmapTag(String value) {
+  final parts = value.split(';').where((item) => item.trim().isNotEmpty);
+  final last = parts.isEmpty ? value : parts.last;
+  return last.replaceAll('\u76f8\u5173\u5730\u70b9', '').trim();
+}
+
+class _SheetTopGrip extends StatelessWidget {
+  const _SheetTopGrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: -12,
+      left: 0,
+      right: 0,
+      child: Center(child: _SheetDragHandle()),
     );
   }
 }
@@ -1683,18 +2376,73 @@ class _SheetDragHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 10),
-      child: Center(
-        child: Container(
-          width: 38,
-          height: 5,
-          decoration: BoxDecoration(
-            color: const Color(0xFFDDE1E0),
-            borderRadius: BorderRadius.circular(99),
-          ),
+    return Center(
+      child: Container(
+        width: 42,
+        height: 5,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x24000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _SafeFullPageScaffold extends StatelessWidget {
+  const _SafeFullPageScaffold({
+    required this.child,
+    this.backgroundColor = const Color(0xFFF7F8F7),
+    this.onClose,
+  });
+
+  final Widget child;
+  final Color backgroundColor;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            Positioned.fill(child: child),
+            if (onClose != null)
+              Positioned(
+                right: 18,
+                top: 18,
+                child: _HeroCloseButton(onPressed: onClose!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroCloseButton extends StatelessWidget {
+  const _HeroCloseButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.filled(
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF111111),
+      ),
+      icon: const Icon(Icons.close_rounded, size: 20),
     );
   }
 }
@@ -1737,24 +2485,62 @@ double _photoAngle(int index) {
 }
 
 class _PlanFilters extends StatelessWidget {
-  const _PlanFilters();
+  const _PlanFilters({required this.activeTab, required this.onTabChanged});
+
+  final int activeTab;
+  final ValueChanged<int> onTabChanged;
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       children: [
-        Text(
-          '我的计划',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        GestureDetector(
+          onTap: () => onTabChanged(0),
+          child: Text(
+            '我的计划',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: activeTab == 0
+                  ? const Color(0xFF1C1C1E)
+                  : const Color(0xFF9C9C9C),
+            ),
+          ),
         ),
-        SizedBox(width: 28),
-        Text('探索', style: TextStyle(fontSize: 15, color: Color(0xFF9C9C9C))),
-        Spacer(),
-        Text('全部计划', style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C))),
-        Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF9C9C9C)),
-        SizedBox(width: 8),
-        Text('状态', style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C))),
-        Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF9C9C9C)),
+        const SizedBox(width: 28),
+        GestureDetector(
+          onTap: () => onTabChanged(1),
+          child: Text(
+            '探索',
+            style: TextStyle(
+              fontSize: 15,
+              color: activeTab == 1
+                  ? const Color(0xFF1C1C1E)
+                  : const Color(0xFF9C9C9C),
+              fontWeight: activeTab == 1 ? FontWeight.w900 : FontWeight.w400,
+            ),
+          ),
+        ),
+        const Spacer(),
+        const Text(
+          '全部计划',
+          style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C)),
+        ),
+        const Icon(
+          Icons.keyboard_arrow_down,
+          size: 18,
+          color: Color(0xFF9C9C9C),
+        ),
+        const SizedBox(width: 8),
+        const Text(
+          '状态',
+          style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C)),
+        ),
+        const Icon(
+          Icons.keyboard_arrow_down,
+          size: 18,
+          color: Color(0xFF9C9C9C),
+        ),
       ],
     );
   }
@@ -1774,21 +2560,16 @@ class PlanCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 122),
-          padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
+          constraints: const BoxConstraints(minHeight: 134),
+          padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x18000000),
-                blurRadius: 22,
-                offset: Offset(0, 10),
-              ),
-              BoxShadow(
-                color: Color(0x08000000),
-                blurRadius: 4,
-                offset: Offset(0, 1),
+                color: Color.fromRGBO(232, 231, 231, 0.38),
+                blurRadius: 12,
+                offset: Offset(0, 5),
               ),
             ],
           ),
@@ -1874,44 +2655,44 @@ const _homePhotoSpots = [
   _HomePhotoSpot(
     name: '世纪公园',
     city: '上海 · 浦东新区',
-    tags: ['城市绿地', '散步', '亲子友好'],
-    description: '世纪公园是浦东中心城区里很适合慢逛的开放式绿地，湖面、林荫路和草坪空间都很舒展，适合安排在城市行程的轻松半天。',
-    tip: '建议上午或傍晚前往，光线更柔和；可以和世纪大道、陆家嘴一带串成一条轻量城市漫步路线。',
+    tags: ['城市绿地', '散步', '亲子'],
+    description: '适合城市漫步和轻松拍照的绿地景点。',
+    tip: '建议结合交通和开放时间安排。',
   ),
   _HomePhotoSpot(
-    name: '外滩万国建筑群',
+    name: '外滩',
     city: '上海 · 黄浦区',
-    tags: ['夜景', '建筑', '经典地标'],
-    description: '外滩是上海最具代表性的城市界面，一侧是历史建筑群，另一侧隔江望向陆家嘴天际线，适合第一次到上海的游客作为城市印象起点。',
-    tip: '傍晚到夜间体验最好。想避开人流，可以从外白渡桥方向慢慢走到十六铺码头。',
+    tags: ['夜景', '建筑', '地标'],
+    description: '适合观看黄浦江两岸天际线的经典景点。',
+    tip: '傍晚到夜间体验更好。',
   ),
   _HomePhotoSpot(
-    name: '陆家嘴天际线',
+    name: '陆家嘴',
     city: '上海 · 浦东新区',
-    tags: ['城市摄影', '观景', '地标'],
-    description: '陆家嘴聚集了东方明珠、上海中心、金茂大厦等高层地标，适合安排观景台、滨江步道和商圈休整。',
-    tip: '如果时间紧，可以把陆家嘴滨江和外滩放在同一天，形成一条黄浦江两岸对望路线。',
+    tags: ['观景', '拍照', '商圈'],
+    description: '高层地标集中，适合城市观景和滨江漫步。',
+    tip: '可与外滩串联成一条路线。',
   ),
   _HomePhotoSpot(
     name: '东方明珠',
     city: '上海 · 浦东新区',
     tags: ['观景台', '亲子', '夜景'],
-    description: '东方明珠是上海辨识度最高的城市地标之一，适合登高看黄浦江弯道，也适合在周边拍摄城市夜景。',
-    tip: '登塔建议提前预约；如果只想拍照，陆家嘴环岛和滨江步道就能获得不错视角。',
+    description: '上海代表性城市地标，适合登高观景。',
+    tip: '建议提前预约。',
   ),
   _HomePhotoSpot(
-    name: '苏州河城市漫步',
-    city: '上海 · 静安/虹口',
-    tags: ['慢行', '咖啡', '历史街区'],
-    description: '苏州河沿线适合低强度城市漫步，桥梁、仓库改造空间和咖啡小店密集，节奏比热门景点更松弛。',
-    tip: '可以从四行仓库出发，沿河走到外白渡桥，再接外滩夜景，路线衔接自然。',
+    name: '豫园',
+    city: '上海 · 黄浦区',
+    tags: ['园林', '老城厢', '美食'],
+    description: '适合体验江南园林和上海老城厢氛围。',
+    tip: '周末人流较多，建议错峰。',
   ),
   _HomePhotoSpot(
-    name: '武康路街区',
-    city: '上海 · 徐汇区',
-    tags: ['梧桐街道', 'Citywalk', '拍照'],
-    description: '武康路街区以梧桐树、老洋房和小型店铺构成轻松的城市漫步氛围，适合安排在下午慢慢逛。',
-    tip: '周末人流较多，建议工作日上午或傍晚去；路线可串联安福路、湖南路和徐家汇公园。',
+    name: '朱家角',
+    city: '上海 · 青浦区',
+    tags: ['古镇', '水乡', '慢游'],
+    description: '适合安排半天到一天的水乡古镇行程。',
+    tip: '可与青浦周边景点一起安排。',
   ),
 ];
 
@@ -1937,24 +2718,37 @@ class _HomePhotoItem {
     required this.fallbackImage,
     required this.spot,
     required this.isNetwork,
+    this.amapSpot,
   });
 
   final String image;
   final String fallbackImage;
   final _HomePhotoSpot spot;
   final bool isNetwork;
+  final AmapPhotoSpot? amapSpot;
 }
 
 Future<List<_HomePhotoItem>> _fetchHomePhotoStripItems() async {
-  const keywords = ['世纪公园', '外滩', '陆家嘴', '东方明珠', '苏州河', '武康路'];
-  final results = await Future.wait(
-    keywords.map(
-      (keyword) => fetchAmapPhotoSpots(keyword: keyword, city: '上海'),
-    ),
+  const city = '上海';
+  final spots = await fetchAmapPhotoSpots(
+    keyword: '景点',
+    city: city,
+    types: '110000',
   );
+  // 如果没有结果，用热门景点作为关键词回退
+  final results = spots.isNotEmpty
+      ? spots
+      : (await Future.wait(
+          const ['外滩', '东方明珠', '陆家嘴', '世纪公园', '苏州河', '武康路'].map(
+            (keyword) => fetchAmapPhotoSpots(
+              keyword: keyword,
+              city: city,
+              types: '110000',
+            ),
+          ),
+        )).expand((s) => s).toList(growable: false);
   final fallbackItems = _fallbackHomePhotoItems;
   return results
-      .expand((spots) => spots)
       .take(6)
       .indexed
       .map((entry) {
@@ -1966,6 +2760,7 @@ Future<List<_HomePhotoItem>> _fetchHomePhotoStripItems() async {
           fallbackImage: fallback.fallbackImage,
           spot: _homePhotoSpotFromAmap(spot),
           isNetwork: true,
+          amapSpot: spot,
         );
       })
       .toList(growable: false);
@@ -1986,12 +2781,6 @@ _HomePhotoSpot _homePhotoSpotFromAmap(AmapPhotoSpot spot) {
         '${spot.name}位于${address.isEmpty ? spot.city : address}，是高德 POI 推荐的旅行地点。这里适合加入城市探索路线，作为拍照、散步或短暂停留的节点。',
     tip: '图片、名称和位置均来自高德 POI。建议结合附近交通与开放时间，把它安排在同区域行程中，减少折返。',
   );
-}
-
-String _compactAmapTag(String value) {
-  final parts = value.split(';').where((item) => item.trim().isNotEmpty);
-  final last = parts.isEmpty ? value : parts.last;
-  return last.replaceAll('相关地点', '').trim();
 }
 
 class PlanDetailDrawer extends StatefulWidget {
@@ -2053,21 +2842,35 @@ class _PlanDetailDrawerState extends State<PlanDetailDrawer> {
       expand: false,
       snap: true,
       snapSizes: const [.88, 1],
-      builder: (context, scrollController) => Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF7F8F7),
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(_isFullScreen ? 0 : 30),
-          ),
-        ),
-        child: _PlanDetailContent(
-          plan: widget.plan,
-          controller: scrollController,
-          showHandle: true,
-          onClose: () => Navigator.of(context).pop(),
-        ),
-      ),
+      builder: (context, scrollController) {
+        final topPadding = _isFullScreen
+            ? MediaQuery.viewPaddingOf(context).top + 6.0
+            : 18.0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8F7),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(_isFullScreen ? 0 : 30),
+                  ),
+                ),
+                child: _PlanDetailContent(
+                  plan: widget.plan,
+                  controller: scrollController,
+                  showHandle: false,
+                  topPadding: topPadding,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+            if (!_isFullScreen) const _SheetTopGrip(),
+          ],
+        );
+      },
     );
   }
 }
@@ -2083,20 +2886,11 @@ class PlanDetailFullPage extends StatelessWidget {
       backgroundColor: const Color(0xFFF3F3F3),
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            _PlanDetailTopBar(
-              title: plan.title,
-              onClose: () => Navigator.of(context).pop(),
-            ),
-            Expanded(
-              child: _PlanDetailContent(
-                plan: plan,
-                showHandle: false,
-                onClose: () => Navigator.of(context).pop(),
-              ),
-            ),
-          ],
+        child: _PlanDetailContent(
+          plan: plan,
+          showHandle: false,
+          showCoverClose: true,
+          onClose: () => Navigator.of(context).pop(),
         ),
       ),
     );
@@ -2150,79 +2944,109 @@ class _PlanDetailContent extends StatelessWidget {
     required this.showHandle,
     required this.onClose,
     this.controller,
+    this.topPadding,
+    this.showCoverClose = false,
   });
 
   final TravelPlan plan;
   final ScrollController? controller;
   final bool showHandle;
   final VoidCallback onClose;
+  final double? topPadding;
+  final bool showCoverClose;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      controller: controller,
-      padding: EdgeInsets.fromLTRB(18, showHandle ? 0 : 6, 18, 28),
+    return Stack(
       children: [
-        if (showHandle) ...[const _SheetDragHandle()],
-        _PlanCover(plan: plan),
-        const SizedBox(height: 16),
-        const _PlanTags(),
-        const SizedBox(height: 14),
-        Text(
-          '${plan.title} · ${plan.days}天',
-          style: const TextStyle(
-            fontSize: 22,
-            height: 1.16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
-            color: Color(0xFF141414),
+        Positioned.fill(
+          child: ListView(
+            controller: controller,
+            padding: EdgeInsets.fromLTRB(
+              18,
+              topPadding ?? (showHandle ? 0 : 6),
+              18,
+              100,
+            ),
+            children: [
+              _PlanCover(plan: plan, onClose: showCoverClose ? onClose : null),
+              const SizedBox(height: 16),
+              const _PlanTags(),
+              const SizedBox(height: 14),
+              Text(
+                '${plan.title} \u8def ${plan.days}\u5929',
+                style: const TextStyle(
+                  fontSize: 22,
+                  height: 1.16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  color: Color(0xFF141414),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _PlanMeta(
+                    icon: Icons.payments_outlined,
+                    text: '\u00a5${plan.days * 320} \u4eba\u5747',
+                  ),
+                  const SizedBox(width: 18),
+                  _PlanMeta(
+                    icon: Icons.map_outlined,
+                    text: '${plan.places} \u4e2a\u5730\u70b9',
+                  ),
+                  const SizedBox(width: 18),
+                  _PlanMeta(
+                    icon: Icons.calendar_month_outlined,
+                    text: _planDateRangeLabel(plan),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Divider(height: 1, color: Color(0xFFE5E5E5)),
+              const SizedBox(height: 18),
+              Text(
+                _planDetailDescription(plan),
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.7,
+                  color: Color(0xFF747474),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 22),
+              _PlanMiniMapCard(plan: plan),
+              const SizedBox(height: 13),
+              _PlanTimelineSection(plan: plan),
+            ],
           ),
         ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            _PlanMeta(
-              icon: Icons.payments_outlined,
-              text: '¥${plan.days * 320} 人均',
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Center(
+            child: SizedBox(
+              width: 258,
+              child: Container(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.paddingOf(context).bottom + 12,
+                ),
+                child: _PlanStartBar(plan: plan),
+              ),
             ),
-            const SizedBox(width: 18),
-            _PlanMeta(icon: Icons.map_outlined, text: '${plan.places} 个地点'),
-            const SizedBox(width: 18),
-            _PlanMeta(
-              icon: Icons.calendar_month_outlined,
-              text: _planDateRangeLabel(plan),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        const Divider(height: 1, color: Color(0xFFE5E5E5)),
-        const SizedBox(height: 18),
-        Text(
-          _planDetailDescription(plan),
-          style: const TextStyle(
-            fontSize: 13,
-            height: 1.7,
-            color: Color(0xFF747474),
-            fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 22),
-        _PlanMiniMapCard(plan: plan),
-        const SizedBox(height: 18),
-        _PlanRouteInlineSection(plan: plan),
-        const SizedBox(height: 18),
-        _DetailTipCard(plan: plan),
-        const SizedBox(height: 18),
-        _PlanStartBar(plan: plan),
       ],
     );
   }
 }
 
 class _PlanCover extends StatelessWidget {
-  const _PlanCover({required this.plan});
+  const _PlanCover({required this.plan, this.onClose});
 
   final TravelPlan plan;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -2232,7 +3056,15 @@ class _PlanCover extends StatelessWidget {
         aspectRatio: 1.78,
         child: Stack(
           fit: StackFit.expand,
-          children: [_AmapPlanCoverImage(plan: plan)],
+          children: [
+            _AmapPlanCoverImage(plan: plan),
+            if (onClose != null)
+              Positioned(
+                right: 12,
+                top: 12,
+                child: _HeroCloseButton(onPressed: onClose!),
+              ),
+          ],
         ),
       ),
     );
@@ -2246,11 +3078,11 @@ class _AmapPlanCoverImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallbackUrls = [_planCoverAsset(plan)];
     return FutureBuilder<List<String>>(
       future: fetchAmapPhotoUrls(
         keyword: _planCoverKeyword(plan),
         city: _planCoverCity(plan),
+        types: '110000',
       ),
       builder: (context, snapshot) {
         final isLoading = snapshot.connectionState != ConnectionState.done;
@@ -2258,13 +3090,13 @@ class _AmapPlanCoverImage extends StatelessWidget {
           return const _PlanCoverLoading();
         }
 
-        final urls = snapshot.data?.isNotEmpty == true
-            ? snapshot.data!
-            : fallbackUrls;
-        return _PlanCoverCarousel(
-          urls: urls,
-          isNetwork: snapshot.data?.isNotEmpty == true,
-        );
+        final urls = (snapshot.data?.isNotEmpty == true
+            ? snapshot.data!.cast<String>()
+            : <String>[]);
+        if (urls.isEmpty) {
+          return const _PlanCoverErrorPlaceholder();
+        }
+        return _PlanCoverCarousel(urls: urls);
       },
     );
   }
@@ -2288,11 +3120,24 @@ class _PlanCoverLoading extends StatelessWidget {
   }
 }
 
+class _PlanCoverErrorPlaceholder extends StatelessWidget {
+  const _PlanCoverErrorPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFEDEDED),
+      child: Center(
+        child: Icon(Icons.image_outlined, size: 30, color: Color(0xFFBDBDBD)),
+      ),
+    );
+  }
+}
+
 class _PlanCoverCarousel extends StatefulWidget {
-  const _PlanCoverCarousel({required this.urls, required this.isNetwork});
+  const _PlanCoverCarousel({required this.urls});
 
   final List<String> urls;
-  final bool isNetwork;
 
   @override
   State<_PlanCoverCarousel> createState() => _PlanCoverCarouselState();
@@ -2334,19 +3179,15 @@ class _PlanCoverCarouselState extends State<_PlanCoverCarousel> {
           onPageChanged: (index) => setState(() => _index = index),
           itemBuilder: (context, index) {
             final url = widget.urls[index];
-            if (!widget.isNetwork) {
-              return Image.asset(url, fit: BoxFit.cover);
-            }
             return Image.network(
               url,
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  Image.asset(_planCoverAssetFallback, fit: BoxFit.cover),
+              errorBuilder: (_, _, _) => const _PlanCoverErrorPlaceholder(),
               loadingBuilder: (context, child, progress) {
                 if (progress == null) return child;
-                return ColoredBox(
-                  color: const Color(0xFFEDEDED),
-                  child: const Center(
+                return const ColoredBox(
+                  color: Color(0xFFEDEDED),
+                  child: Center(
                     child: SizedBox(
                       width: 18,
                       height: 18,
@@ -2394,11 +3235,11 @@ class _PlanTags extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Row(
       children: [
-        _PlanTag(icon: Icons.account_balance_outlined, text: '建筑'),
+        _PlanTag(icon: Icons.account_balance_outlined, text: '\u5efa\u7b51'),
         SizedBox(width: 8),
-        _PlanTag(icon: Icons.eco_outlined, text: '自然'),
+        _PlanTag(icon: Icons.eco_outlined, text: '\u81ea\u7136'),
         SizedBox(width: 8),
-        _PlanTag(icon: Icons.museum_outlined, text: '人文'),
+        _PlanTag(icon: Icons.museum_outlined, text: '\u4eba\u6587'),
       ],
     );
   }
@@ -2476,9 +3317,161 @@ class _PlanMiniMapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: SizedBox(height: 154, child: _DetailRouteMap(plan: plan)),
+    return Container(
+      height: 199,
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: _DetailRouteMap(plan: plan),
+      ),
+    );
+  }
+}
+
+class _PlanTimelineSection extends StatelessWidget {
+  const _PlanTimelineSection({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _dailyPlanFor(plan);
+    return Column(
+      key: const Key('plan-detail-figma-timeline'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '\u884c\u7a0b\u5b89\u6392',
+          style: TextStyle(
+            fontSize: 14,
+            height: 1,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+            color: Color(0xFF111111),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Column(
+          children: [
+            for (var i = 0; i < days.length; i++)
+              _TimelineDayRow(
+                plan: plan,
+                day: days[i],
+                accent: plan.accent,
+                isFirst: i == 0,
+                isLast: i == days.length - 1,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineDayRow extends StatelessWidget {
+  const _TimelineDayRow({
+    required this.plan,
+    required this.day,
+    required this.accent,
+    required this.isFirst,
+    required this.isLast,
+  });
+
+  final TravelPlan plan;
+  final _DailyPlan day;
+  final Color accent;
+  final bool isFirst;
+  final bool isLast;
+
+  static const _lineGray = Color(0xFFE5E5E5);
+  static const _lineW = 2.0;
+  static const _rowH = 130.0;
+  static const _dotSize = 17.0;
+  static const _dotRowTop = 3.0; // 圆点距行顶
+
+  @override
+  Widget build(BuildContext context) {
+    final lineBottomLast = _rowH - _dotRowTop - _dotSize / 2;
+
+    return SizedBox(
+      height: _rowH,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 贯穿直线（浅灰）— 跨越全部行，无截断
+          Positioned(
+            left: (_dotSize - _lineW) / 2,
+            top: isFirst ? 8.0 : 0,
+            bottom: isLast ? lineBottomLast : 0,
+            child: Container(
+              width: _lineW,
+              decoration: BoxDecoration(
+                color: _lineGray,
+                borderRadius: isFirst
+                    ? const BorderRadius.vertical(top: Radius.circular(1))
+                    : null,
+              ),
+            ),
+          ),
+          // 圆点 + 卡片
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: _dotRowTop),
+                child: SizedBox(
+                  width: _dotSize,
+                  height: _dotSize,
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF111111),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x30000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      '${day.index}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _DailyPlanCard(
+                  day: day,
+                  accent: accent,
+                  onTap: () => _openDailyPlanRoute(context, plan, day),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2489,67 +3482,7 @@ class _PlanRouteInlineSection extends StatelessWidget {
   final TravelPlan plan;
 
   @override
-  Widget build(BuildContext context) {
-    final segments = _routeSegmentsFor(plan);
-    final days = _dailyPlanFor(plan);
-    final totalDistance = segments.fold<int>(
-      0,
-      (sum, segment) => sum + segment.distanceKm,
-    );
-    final totalHours = segments.fold<double>(
-      0,
-      (sum, segment) => sum + segment.durationHours,
-    );
-
-    return Column(
-      key: const Key('route-planner-inline'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _RouteSummaryTile(
-                icon: Icons.route_outlined,
-                value: '$totalDistance km',
-                label: '预估总里程',
-                color: plan.accent,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _RouteSummaryTile(
-                icon: Icons.schedule_rounded,
-                value: '${totalHours.toStringAsFixed(1)} h',
-                label: '城际交通',
-                color: const Color(0xFF24D391),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _RouteSectionTitle(
-          icon: Icons.alt_route_rounded,
-          title: '目的地路线',
-          action: '共${segments.length}段',
-        ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < segments.length; i++)
-          _RouteSegmentCard(
-            segment: segments[i],
-            index: i + 1,
-            accent: plan.accent,
-          ),
-        const SizedBox(height: 16),
-        _RouteSectionTitle(
-          icon: Icons.event_note_rounded,
-          title: '每日安排',
-          action: '${plan.days}天',
-        ),
-        const SizedBox(height: 10),
-        for (final day in days) _DailyPlanCard(day: day, accent: plan.accent),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => _PlanTimelineSection(plan: plan);
 }
 
 class _PlanStartBar extends StatelessWidget {
@@ -2559,46 +3492,68 @@ class _PlanStartBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        IconButton.filled(
-          onPressed: () {},
-          style: IconButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF1F1F1F),
-            fixedSize: const Size(50, 50),
+    return SizedBox(
+      height: 66,
+      child: Row(
+        children: [
+          Material(
+            color: Colors.white,
+            shape: const CircleBorder(),
+            elevation: 10,
+            shadowColor: const Color(0x24000000),
+            child: IconButton(
+              onPressed: () {},
+              style: IconButton.styleFrom(
+                foregroundColor: const Color(0xFF111111),
+                fixedSize: const Size(66, 66),
+              ),
+              icon: const Icon(Icons.edit_outlined, size: 22),
+            ),
           ),
-          icon: const Icon(Icons.edit_outlined, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: FilledButton(
-            onPressed: () {},
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF1F2230),
-              foregroundColor: Colors.white,
-              fixedSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+          const SizedBox(width: 14),
+          Expanded(
+            child: FilledButton(
+              onPressed: () {},
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF020202),
+                foregroundColor: Colors.white,
+                fixedSize: const Size.fromHeight(66),
+                elevation: 10,
+                shadowColor: const Color(0x30000000),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(33),
+                ),
+                padding: const EdgeInsets.fromLTRB(28, 0, 10, 0),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '\u5f00\u59cb\u4f60\u7684\u65c5\u884c\uff01',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF292929),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.near_me_rounded, size: 17),
+                  ),
+                ],
               ),
             ),
-            child: const Text(
-              '开始我的旅行',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        IconButton.filled(
-          onPressed: () {},
-          style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF1F2230),
-            foregroundColor: Colors.white,
-            fixedSize: const Size(50, 50),
-          ),
-          icon: const Icon(Icons.near_me_outlined, size: 20),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -2837,71 +3792,936 @@ class _TinyRoutePill extends StatelessWidget {
 }
 
 class _DailyPlanCard extends StatelessWidget {
-  const _DailyPlanCard({required this.day, required this.accent});
+  const _DailyPlanCard({required this.day, required this.accent, this.onTap});
 
   final _DailyPlan day;
   final Color accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 112,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.fromLTRB(9, 9, 10, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(7),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 12,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0xFFE0E0E0),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      'Day ${day.index}',
+                      style: const TextStyle(
+                        fontSize: 8,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111111),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    day.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                      color: Color(0xFF111111),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    day.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      height: 1.25,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0,
+                      color: Color(0xFF8A8A8A),
+                    ),
+                  ),
+                  const Spacer(),
+                  const Row(
+                    children: [
+                      _DailyPlanTag(
+                        icon: Icons.directions_bus_outlined,
+                        label: '\u5730\u94c1+\u6b65\u884c',
+                      ),
+                      SizedBox(width: 6),
+                      _DailyPlanTag(
+                        icon: Icons.pin_drop_outlined,
+                        label: '12\u516c\u91cc',
+                      ),
+                      SizedBox(width: 6),
+                      _DailyPlanTag(
+                        icon: Icons.schedule_outlined,
+                        label: '\u7ea64\u5c0f\u65f6',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 7),
+            _DailyPlanImage(day: day.title),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DailyPlanTag extends StatelessWidget {
+  const _DailyPlanTag({required this.label, this.icon});
+
+  final String label;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      height: 14,
+      padding: EdgeInsets.only(left: icon != null ? 6 : 11, right: 11),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: .14),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              'D${day.index}',
-              style: TextStyle(
-                color: accent,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  day.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF151515),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  day.description,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF777777),
-                  ),
-                ),
-              ],
+          if (icon != null) ...[
+            Icon(icon, size: 8, color: const Color(0xFFB3B3B3)),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9,
+              height: 1,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+              color: Color(0xFFB3B3B3),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _DailyPlanImage extends StatefulWidget {
+  const _DailyPlanImage({required this.day});
+
+  final String day;
+
+  @override
+  State<_DailyPlanImage> createState() => _DailyPlanImageState();
+}
+
+class _DailyPlanImageState extends State<_DailyPlanImage> {
+  String? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final urls = await fetchAmapPhotoUrls(
+        keyword: widget.day,
+        city: '',
+        types: '110000',
+      );
+      if (mounted && urls.isNotEmpty) {
+        setState(() => _url = urls.first);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(7),
+      child: SizedBox(
+        width: 93,
+        height: 93,
+        child: _url != null
+            ? Image.network(
+                _url!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _placeholder(),
+              )
+            : _placeholder(),
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return const ColoredBox(
+      color: Color(0xFFEDEDED),
+      child: Center(
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+void _openDailyPlanRoute(
+  BuildContext context,
+  TravelPlan plan,
+  _DailyPlan day,
+) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => _DailyPlanRoutePage(plan: plan, day: day),
+    ),
+  );
+}
+
+class _DailyPlanRoutePage extends StatelessWidget {
+  const _DailyPlanRoutePage({required this.plan, required this.day});
+
+  final TravelPlan plan;
+  final _DailyPlan day;
+
+  @override
+  Widget build(BuildContext context) {
+    final stops = _dailyRouteStopsFor(plan, day);
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Stack(
+        children: [
+          ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              SizedBox(
+                height: 224,
+                width: double.infinity,
+                child: _DailyPlanHeroImage(keyword: day.title),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(19, 16, 16, 108),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_outlined,
+                          size: 12,
+                          color: Color(0xFF111111),
+                        ),
+                        const SizedBox(width: 9),
+                        Text(
+                          _dailyRouteDateLabel(plan, day),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0,
+                            color: Color(0xFF111111),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DailyRouteTitle(plan: plan, day: day),
+                        ),
+                        const SizedBox(width: 12),
+                        _DailyWeatherBadge(plan: plan),
+                      ],
+                    ),
+                    const SizedBox(height: 11),
+                    Text(
+                      _dailyRouteDescription(plan, day),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0,
+                        color: Color(0xFF777777),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _DailyRouteStats(plan: plan, stops: stops),
+                    const SizedBox(height: 17),
+                    _DailyAiNote(day: day),
+                    const SizedBox(height: 13),
+                    const _DailyRouteDots(),
+                    const SizedBox(height: 14),
+                    const Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Color(0xFFE7E7E7),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '\u884c\u7a0b\u7ad9\u70b9',
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0,
+                              color: Color(0xFF111111),
+                            ),
+                          ),
+                        ),
+                        const _AddDailyStopButton(),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _DailyStopsTimeline(stops: stops),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            left: 68,
+            right: 67,
+            bottom: 17 + MediaQuery.viewPaddingOf(context).bottom,
+            child: const _DailyRouteStartButton(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyPlanHeroImage extends StatefulWidget {
+  const _DailyPlanHeroImage({required this.keyword});
+
+  final String keyword;
+
+  @override
+  State<_DailyPlanHeroImage> createState() => _DailyPlanHeroImageState();
+}
+
+class _DailyPlanHeroImageState extends State<_DailyPlanHeroImage> {
+  String? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final urls = await fetchAmapPhotoUrls(
+        keyword: widget.keyword,
+        city: '',
+        types: '110000',
+      );
+      if (mounted && urls.isNotEmpty) {
+        setState(() => _url = urls.first);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_url == null) {
+      return const ColoredBox(color: Color(0xFFE0E0E0));
+    }
+    return Image.network(
+      _url!,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => const ColoredBox(color: Color(0xFFE0E0E0)),
+    );
+  }
+}
+
+class _DailyWeatherBadge extends StatelessWidget {
+  const _DailyWeatherBadge({required this.plan});
+
+  final TravelPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 89,
+      height: 40,
+      padding: const EdgeInsets.fromLTRB(12, 0, 7, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              '10\u2103',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+                color: Color(0xFF111111),
+              ),
+            ),
+          ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: Image.asset(
+              _planCoverAsset(plan),
+              width: 30,
+              height: 22,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyRouteTitle extends StatelessWidget {
+  const _DailyRouteTitle({required this.plan, required this.day});
+
+  final TravelPlan plan;
+  final _DailyPlan day;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = _dailyRouteAnchor(plan, day.index);
+    final end = _dailyRouteAnchor(plan, day.index + 1);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          start,
+          style: const TextStyle(
+            fontSize: 18,
+            height: 1,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+            color: Color(0xFF111111),
+          ),
+        ),
+        const SizedBox(width: 22),
+        const Icon(
+          Icons.arrow_upward_rounded,
+          size: 24,
+          color: Color(0xFF111111),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          end,
+          style: const TextStyle(
+            fontSize: 18,
+            height: 1,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+            color: Color(0xFF111111),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DailyRouteStats extends StatelessWidget {
+  const _DailyRouteStats({required this.plan, required this.stops});
+
+  final TravelPlan plan;
+  final List<_DailyRouteStop> stops;
+
+  @override
+  Widget build(BuildContext context) {
+    final distance = 48 + _dailyHash(plan.title) % 53;
+    return Row(
+      children: [
+        _DailyStatBlock(
+          value: '1\u5c0f\u65f650\u5206\u949f',
+          label: '\u5e73\u5747\u65f6\u95f4',
+        ),
+        const SizedBox(width: 44),
+        const SizedBox(height: 16, child: VerticalDivider(width: 1)),
+        const SizedBox(width: 42),
+        _DailyStatBlock(
+          value: '$distance KM',
+          label: '\u603b\u516c\u91cc\u6570',
+        ),
+        const Spacer(),
+        const SizedBox(height: 16, child: VerticalDivider(width: 1)),
+        const SizedBox(width: 42),
+        _DailyStatBlock(
+          value: '${stops.length} \u7ad9\u70b9',
+          label: '\u8ba1\u5212\u505c\u9760\u7ad9',
+        ),
+        const SizedBox(width: 12),
+      ],
+    );
+  }
+}
+
+class _DailyStatBlock extends StatelessWidget {
+  const _DailyStatBlock({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 30,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+              color: Color(0xFF111111),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              height: 1,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+              color: Color(0xFF888888),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyAiNote extends StatefulWidget {
+  const _DailyAiNote({required this.day});
+
+  final _DailyPlan day;
+
+  @override
+  State<_DailyAiNote> createState() => _DailyAiNoteState();
+}
+
+class _DailyAiNoteState extends State<_DailyAiNote> {
+  int _tipIndex = 0;
+  Timer? _timer;
+
+  static const _tipsPool = [
+    '出发前检查天气，雨天备好雨具和防水鞋',
+    '热门景点尽量赶早，避开人流高峰',
+    '随身带好充电宝，拍照导航耗电快',
+    '提前下载离线地图，信号不好也能导航',
+    '穿舒适的鞋子，一天走下来脚会很累',
+    '当地特色小吃别错过，街边小店往往更好吃',
+    '拍照选黄金时段，日出日落光线最美',
+    '预留足够的交通时间，别把行程排太满',
+    '随身带些现金零钱，有些小店只收现金',
+    '注意保管好随身物品，人多的地方要当心',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      setState(() {
+        _tipIndex = (_tipIndex + 1) % (_tipsPool.length + 1);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String get _currentTip {
+    if (_tipIndex == 0) return widget.day.description;
+    return _tipsPool[(_tipIndex - 1) % _tipsPool.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.fromLTRB(11, 0, 16, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          ClipOval(
+            child: Image.asset(
+              'assets/images/ai.png',
+              width: 30,
+              height: 30,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: Text(
+                _currentTip,
+                key: ValueKey(_tipIndex),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  height: 1.25,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF777777),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyRouteDots extends StatelessWidget {
+  const _DailyRouteDots();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _DailyDot(active: true),
+          SizedBox(width: 3),
+          _DailyDot(active: false),
+          SizedBox(width: 3),
+          _DailyDot(active: false),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyDot extends StatelessWidget {
+  const _DailyDot({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 5,
+      height: 5,
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF111111) : const Color(0xFFD9D9D9),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}
+
+class _AddDailyStopButton extends StatelessWidget {
+  const _AddDailyStopButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.add_rounded, size: 17, color: Color(0xFF111111)),
+          SizedBox(width: 6),
+          Text(
+            '\u6dfb\u52a0\u7ad9\u70b9',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111111),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyStopsTimeline extends StatelessWidget {
+  const _DailyStopsTimeline({required this.stops});
+
+  final List<_DailyRouteStop> stops;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: 10,
+          top: 10,
+          bottom: 38,
+          child: Container(width: 1, color: const Color(0xFFBDBDBD)),
+        ),
+        Column(
+          children: [
+            for (var i = 0; i < stops.length; i++)
+              _DailyStopRow(
+                stop: stops[i],
+                index: i + 1,
+                isLast: i == stops.length - 1,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DailyStopRow extends StatelessWidget {
+  const _DailyStopRow({
+    required this.stop,
+    required this.index,
+    required this.isLast,
+  });
+
+  final _DailyRouteStop stop;
+  final int index;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 90,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.zero,
+            child: Image.asset(
+              index == 1
+                  ? 'assets/icons/Group 51.png'
+                  : 'assets/icons/Group 52.png',
+              width: 20,
+              height: 20,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Container(
+              height: 78,
+              padding: const EdgeInsets.fromLTRB(13, 12, 13, 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(9),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    stop.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF111111),
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.alarm_rounded,
+                        size: 12,
+                        color: Color(0xFF9B9B9B),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        stop.time,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF8A8A8A),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const SizedBox(
+                        height: 16,
+                        child: VerticalDivider(
+                          width: 1,
+                          color: Color(0xFFD8D8D8),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 12,
+                        color: Color(0xFF9B9B9B),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          stop.address,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF8A8A8A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyRouteStartButton extends StatelessWidget {
+  const _DailyRouteStartButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton(
+      onPressed: () {},
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFF020202),
+        foregroundColor: Colors.white,
+        fixedSize: const Size.fromHeight(58),
+        elevation: 10,
+        shadowColor: const Color(0x30000000),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(29)),
+        padding: const EdgeInsets.fromLTRB(84, 0, 14, 0),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              '\u5f00\u542f\u8def\u7ebf',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: const BoxDecoration(
+              color: Color(0xFF292929),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.near_me_rounded, size: 17),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyRouteStop {
+  const _DailyRouteStop({
+    required this.title,
+    required this.time,
+    required this.address,
+  });
+
+  final String title;
+  final String time;
+  final String address;
 }
 
 class _RouteSegment {
@@ -2967,6 +4787,93 @@ List<_DailyPlan> _dailyPlanFor(TravelPlan plan) {
             : '上午安排核心景点，下午留给拍照和城市漫步，晚上复盘第二天路线。',
       ),
   ];
+}
+
+String _dailyRouteDateLabel(TravelPlan plan, _DailyPlan day) {
+  final parsed = _parsePlanStartDate(plan.dateRange);
+  if (parsed == null) return '3\u670811 \u661f\u671f\u5929';
+  final date = parsed.add(Duration(days: day.index - 1));
+  const weekdays = [
+    '\u661f\u671f\u4e00',
+    '\u661f\u671f\u4e8c',
+    '\u661f\u671f\u4e09',
+    '\u661f\u671f\u56db',
+    '\u661f\u671f\u4e94',
+    '\u661f\u671f\u516d',
+    '\u661f\u671f\u5929',
+  ];
+  return '${date.month}\u6708${date.day} ${weekdays[date.weekday - 1]}';
+}
+
+DateTime? _parsePlanStartDate(String dateRange) {
+  final start = dateRange.split('~').first;
+  final parts = start.split('.');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  return DateTime(year, month, day);
+}
+
+String _dailyRouteAnchor(TravelPlan plan, int dayIndex) {
+  final stops = plan.routeStops;
+  if (stops.isEmpty) return plan.title;
+  final source = ((dayIndex - 1) * stops.length) ~/ plan.days;
+  final index = source < 0
+      ? 0
+      : source >= stops.length
+      ? stops.length - 1
+      : source;
+  return stops[index].label;
+}
+
+String _dailyRouteDescription(TravelPlan plan, _DailyPlan day) {
+  final start = _dailyRouteAnchor(plan, day.index);
+  final end = _dailyRouteAnchor(plan, day.index + 1);
+  return '\u4ece$start\u51fa\u53d1\u524d\u5f80$end\uff0c'
+      '\u8def\u7ebf\u878d\u5408\u6587\u5316\u3001\u98ce\u666f\u4e0e\u653e\u677e\u4f53\u9a8c\u3002';
+}
+
+List<_DailyRouteStop> _dailyRouteStopsFor(TravelPlan plan, _DailyPlan day) {
+  final start = _dailyRouteAnchor(plan, day.index);
+  final end = _dailyRouteAnchor(plan, day.index + 1);
+  final hub = _dailyRouteAnchor(plan, day.index + 2);
+  return [
+    _DailyRouteStop(
+      title: '$start\u9152\u5e97',
+      time: '8:30',
+      address: _dailyPoiAddress(start, '\u9152\u5e97'),
+    ),
+    _DailyRouteStop(
+      title: '$start\u2192$end',
+      time: '10:20',
+      address: _dailyPoiAddress(end, '\u98ce\u666f\u533a\u5165\u53e3'),
+    ),
+    _DailyRouteStop(
+      title: '$end\u6df1\u5ea6\u6e38',
+      time: '13:30',
+      address: _dailyPoiAddress(end, '\u6838\u5fc3\u6e38\u89c8\u7ebf'),
+    ),
+    _DailyRouteStop(
+      title: '$hub\u4f11\u6574',
+      time: '17:40',
+      address: _dailyPoiAddress(hub, '\u4f4f\u5bbf\u4e0e\u9910\u996e\u533a'),
+    ),
+  ];
+}
+
+String _dailyPoiAddress(String stop, String poi) {
+  final cleanStop = stop.replaceAll(RegExp(r'\s+'), '');
+  return '$cleanStop\u9644\u8fd1\u00b7$poi';
+}
+
+int _dailyHash(String value) {
+  var result = 0;
+  for (final unit in value.codeUnits) {
+    result = (result * 31 + unit) & 0x7fffffff;
+  }
+  return result;
 }
 
 int _estimateDistanceKm(RouteStop from, RouteStop to) {
@@ -3195,32 +5102,322 @@ class _DetailRouteMap extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(child: CustomPaint(painter: _RouteMapPainter(plan))),
-        Positioned(
-          left: 28,
-          bottom: 86,
-          child: _MapControlButton(icon: Icons.add, onTap: () {}),
+        Positioned.fill(
+          child: CustomPaint(painter: _FigmaDetailMapPainter(plan)),
         ),
         Positioned(
-          left: 28,
-          bottom: 42,
-          child: _MapControlButton(icon: Icons.remove, onTap: () {}),
+          right: 12,
+          bottom: 49,
+          child: _DetailMapZoomControl(onTap: () {}),
         ),
         Positioned(
-          right: 28,
-          bottom: 56,
-          child: _MapControlButton(
-            icon: Icons.my_location_outlined,
-            onTap: () {},
-          ),
+          right: 14,
+          bottom: 14,
+          child: _DetailMapLocateButton(onTap: () {}),
         ),
-        for (var i = 0; i < plan.routeStops.length; i++)
-          _DetailPhotoMarker(
-            stop: plan.routeStops[i],
-            photo: 'assets/images/photo-${(i % 7) + 1}.png',
-            color: i.isEven ? plan.accent : const Color(0xFFFF7A45),
-          ),
       ],
+    );
+  }
+}
+
+class _FigmaDetailMapPainter extends CustomPainter {
+  const _FigmaDetailMapPainter(this.plan);
+
+  final TravelPlan plan;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFF7F9FA),
+    );
+
+    final parkPaint = Paint()..color = const Color(0xFFBFEFC7);
+    final paleParkPaint = Paint()..color = const Color(0xFFDDF7E2);
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width * .72, size.height * .33)
+        ..lineTo(size.width * .96, size.height * .22)
+        ..lineTo(size.width * .98, size.height * .74)
+        ..lineTo(size.width * .76, size.height * .9)
+        ..lineTo(size.width * .66, size.height * .66)
+        ..close(),
+      paleParkPaint,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width * .02, size.height * .7)
+        ..lineTo(size.width * .22, size.height * .58)
+        ..lineTo(size.width * .28, size.height * .92)
+        ..lineTo(size.width * .02, size.height * .98)
+        ..close(),
+      parkPaint,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width * .74, size.height * .54)
+        ..lineTo(size.width * .9, size.height * .46)
+        ..lineTo(size.width * .92, size.height * .72)
+        ..lineTo(size.width * .79, size.height * .78)
+        ..close(),
+      parkPaint,
+    );
+
+    final minorRoad = Paint()
+      ..color = const Color(0xFFE7EBEE)
+      ..strokeWidth = 1.2
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 7; i++) {
+      final y = size.height * (.12 + i * .13);
+      canvas.drawLine(
+        Offset(-8, y),
+        Offset(size.width + 8, y + (i.isEven ? 11 : -8)),
+        minorRoad,
+      );
+    }
+    for (var i = 0; i < 6; i++) {
+      final x = size.width * (.12 + i * .16);
+      canvas.drawLine(
+        Offset(x, -8),
+        Offset(x + (i.isEven ? 26 : -12), size.height + 8),
+        minorRoad,
+      );
+    }
+
+    void drawRoad(List<Offset> points, {double width = 12}) {
+      final border = Paint()
+        ..color = const Color(0xFFE0E5E8)
+        ..strokeWidth = width + 2
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      final fill = Paint()
+        ..color = Colors.white
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      final path = Path();
+      for (var i = 0; i < points.length; i++) {
+        final point = Offset(
+          points[i].dx * size.width,
+          points[i].dy * size.height,
+        );
+        if (i == 0) {
+          path.moveTo(point.dx, point.dy);
+        } else {
+          path.lineTo(point.dx, point.dy);
+        }
+      }
+      canvas.drawPath(path, border);
+      canvas.drawPath(path, fill);
+    }
+
+    drawRoad(const [
+      Offset(-.03, .2),
+      Offset(.34, .42),
+      Offset(.63, .38),
+      Offset(1.04, .12),
+    ], width: 10);
+    drawRoad(const [
+      Offset(.02, .86),
+      Offset(.35, .62),
+      Offset(.65, .44),
+      Offset(.96, .34),
+    ], width: 9);
+    drawRoad(const [
+      Offset(.23, -.04),
+      Offset(.26, .35),
+      Offset(.3, .82),
+      Offset(.32, 1.06),
+    ], width: 8);
+    drawRoad(const [
+      Offset(.58, -.05),
+      Offset(.55, .32),
+      Offset(.5, .7),
+      Offset(.46, 1.04),
+    ], width: 8);
+    drawRoad(const [
+      Offset(.82, -.04),
+      Offset(.72, .32),
+      Offset(.68, .66),
+      Offset(.62, 1.03),
+    ], width: 8);
+
+    final labelStyle = const TextStyle(
+      fontSize: 7,
+      height: 1,
+      fontWeight: FontWeight.w600,
+      color: Color(0xFF7D8A94),
+    );
+    final redStyle = labelStyle.copyWith(color: const Color(0xFFE66565));
+    final blueStyle = labelStyle.copyWith(color: const Color(0xFF348BE8));
+    final orangeStyle = labelStyle.copyWith(color: const Color(0xFFF08A23));
+
+    final labels = <({String text, Offset at, Color dot, TextStyle style})>[
+      (
+        text: plan.routeStops.first.label,
+        at: const Offset(.18, .24),
+        dot: const Color(0xFF3C8DFF),
+        style: blueStyle,
+      ),
+      (
+        text: plan.routeStops.length > 1
+            ? plan.routeStops[1].label
+            : plan.title,
+        at: const Offset(.37, .38),
+        dot: const Color(0xFFFFA726),
+        style: orangeStyle,
+      ),
+      (
+        text: plan.routeStops.length > 2
+            ? plan.routeStops[2].label
+            : plan.title,
+        at: const Offset(.54, .58),
+        dot: const Color(0xFF2EBB70),
+        style: blueStyle,
+      ),
+      (
+        text: plan.routeStops.last.label,
+        at: const Offset(.78, .48),
+        dot: const Color(0xFFE95858),
+        style: redStyle,
+      ),
+      (
+        text: '\u5730\u94c1\u7ad9',
+        at: const Offset(.23, .74),
+        dot: const Color(0xFF348BE8),
+        style: blueStyle,
+      ),
+      (
+        text: '\u5546\u5708',
+        at: const Offset(.68, .24),
+        dot: const Color(0xFFFFA726),
+        style: orangeStyle,
+      ),
+      (
+        text: '\u516c\u56ed',
+        at: const Offset(.86, .66),
+        dot: const Color(0xFF2EBB70),
+        style: labelStyle,
+      ),
+      (
+        text: '\u9152\u5e97',
+        at: const Offset(.46, .28),
+        dot: const Color(0xFFE95858),
+        style: redStyle,
+      ),
+      (
+        text: '\u666f\u70b9',
+        at: const Offset(.34, .78),
+        dot: const Color(0xFF9B72E8),
+        style: labelStyle.copyWith(color: const Color(0xFF9B72E8)),
+      ),
+      (
+        text: '\u9910\u5385',
+        at: const Offset(.62, .82),
+        dot: const Color(0xFFFFA726),
+        style: orangeStyle,
+      ),
+    ];
+    for (final label in labels) {
+      _drawMapPoi(canvas, size, label.text, label.at, label.dot, label.style);
+    }
+  }
+
+  void _drawMapPoi(
+    Canvas canvas,
+    Size size,
+    String text,
+    Offset at,
+    Color dot,
+    TextStyle style,
+  ) {
+    final point = Offset(at.dx * size.width, at.dy * size.height);
+    canvas.drawCircle(point, 2.4, Paint()..color = Colors.white);
+    canvas.drawCircle(point, 1.8, Paint()..color = dot);
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: 70);
+    painter.paint(canvas, point + const Offset(4, -3));
+  }
+
+  @override
+  bool shouldRepaint(covariant _FigmaDetailMapPainter oldDelegate) =>
+      oldDelegate.plan != plan;
+}
+
+class _DetailMapZoomControl extends StatelessWidget {
+  const _DetailMapZoomControl({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(17),
+      elevation: 5,
+      shadowColor: const Color(0x20000000),
+      child: SizedBox(
+        width: 34,
+        height: 68,
+        child: Column(
+          children: [
+            Expanded(
+              child: InkWell(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(17),
+                ),
+                onTap: onTap,
+                child: const Center(
+                  child: Icon(Icons.add, size: 19, color: Color(0xFF111111)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: InkWell(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(17),
+                ),
+                onTap: onTap,
+                child: const Center(
+                  child: Icon(Icons.remove, size: 19, color: Color(0xFF111111)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailMapLocateButton extends StatelessWidget {
+  const _DetailMapLocateButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 5,
+      shadowColor: const Color(0x20000000),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const SizedBox(
+          width: 31,
+          height: 31,
+          child: Icon(
+            Icons.my_location_outlined,
+            size: 16,
+            color: Color(0xFF111111),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -3438,8 +5635,8 @@ class RoutePreview extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 122,
-        height: 97,
+        width: 160,
+        height: 110,
         decoration: BoxDecoration(
           color: const Color(0xFFF4F7F6),
           borderRadius: BorderRadius.circular(8),
@@ -3451,16 +5648,19 @@ class RoutePreview extends StatelessWidget {
 }
 
 class _RouteMapPainter extends CustomPainter {
-  const _RouteMapPainter(this.plan);
+  const _RouteMapPainter(this.plan, {this.detailed = false});
 
   final TravelPlan plan;
+  final bool detailed;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = const Color(0xFFF5F7F5);
+    final bgPaint = Paint()
+      ..color = detailed ? const Color(0xFFF7F8F7) : const Color(0xFFF5F7F5);
     canvas.drawRect(Offset.zero & size, bgPaint);
 
-    final waterPaint = Paint()..color = const Color(0xFFDCEFF7);
+    final waterPaint = Paint()
+      ..color = detailed ? const Color(0xFFE9F1F5) : const Color(0xFFDCEFF7);
     final water = Path()
       ..moveTo(size.width * .56, -4)
       ..cubicTo(
@@ -3475,7 +5675,8 @@ class _RouteMapPainter extends CustomPainter {
       ..close();
     canvas.drawPath(water, waterPaint);
 
-    final parkPaint = Paint()..color = const Color(0xFFE2F1E6);
+    final parkPaint = Paint()
+      ..color = detailed ? const Color(0xFFE9F4EC) : const Color(0xFFE2F1E6);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(size.width * .06, size.height * .1, 34, 24),
@@ -3492,8 +5693,8 @@ class _RouteMapPainter extends CustomPainter {
     );
 
     final minorRoadPaint = Paint()
-      ..color = const Color(0xFFE1E6E8)
-      ..strokeWidth = 1.4
+      ..color = detailed ? const Color(0xFFE6EAEC) : const Color(0xFFE1E6E8)
+      ..strokeWidth = detailed ? 1.1 : 1.4
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < 6; i++) {
       final y = size.height * (.15 + i * .14);
@@ -3514,13 +5715,13 @@ class _RouteMapPainter extends CustomPainter {
 
     void drawRoad(List<Offset> points) {
       final shadowPaint = Paint()
-        ..color = const Color(0xFFD1D8DC)
-        ..strokeWidth = 7
+        ..color = detailed ? const Color(0xFFDDE3E6) : const Color(0xFFD1D8DC)
+        ..strokeWidth = detailed ? 6 : 7
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
       final roadPaint = Paint()
         ..color = Colors.white
-        ..strokeWidth = 5
+        ..strokeWidth = detailed ? 4.2 : 5
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
       final path = _pathFrom(points, size);
@@ -3550,12 +5751,12 @@ class _RouteMapPainter extends CustomPainter {
 
     final routeUnderlay = Paint()
       ..color = Colors.white
-      ..strokeWidth = 6
+      ..strokeWidth = detailed ? 5 : 6
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     final routePaint = Paint()
       ..color = plan.accent
-      ..strokeWidth = 3.4
+      ..strokeWidth = detailed ? 2.4 : 3.4
       ..strokeCap = StrokeCap.round;
     final routePath = _pathFrom(
       plan.routeStops.map((stop) => stop.position).toList(),
@@ -3580,15 +5781,15 @@ class _RouteMapPainter extends CustomPainter {
 
       canvas.drawCircle(
         point,
-        isStart || isEnd ? 5 : 4,
+        detailed ? 3.6 : (isStart || isEnd ? 5 : 4),
         Paint()..color = Colors.white,
       );
       canvas.drawCircle(
         point,
-        isStart || isEnd ? 3.6 : 2.7,
+        detailed ? 2.4 : (isStart || isEnd ? 3.6 : 2.7),
         Paint()..color = pinColor,
       );
-      if (!isStart && !isEnd) {
+      if (!detailed && !isStart && !isEnd) {
         canvas.drawCircle(
           point,
           3.4,
@@ -3599,7 +5800,7 @@ class _RouteMapPainter extends CustomPainter {
         );
       }
 
-      if (i == 0 || i == plan.routeStops.length - 1) {
+      if (!detailed && (i == 0 || i == plan.routeStops.length - 1)) {
         _drawLabel(canvas, stop.label, point, size);
       }
     }
@@ -3651,7 +5852,7 @@ class _RouteMapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RouteMapPainter oldDelegate) =>
-      oldDelegate.plan != plan;
+      oldDelegate.plan != plan || oldDelegate.detailed != detailed;
 }
 
 class ExplorePage extends StatefulWidget {
@@ -3706,6 +5907,749 @@ class _ExplorePageState extends State<ExplorePage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ExploreEmptyState extends StatelessWidget {
+  const _ExploreEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8FFF3),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: const Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 34,
+              color: Color(0xFF18C777),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '还没有AI对话记录',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1C1C1E),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '在首页点击AI对话框，\n生成旅行计划后会自动保存到这里',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: Color(0xFF999999),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConversationCard extends StatefulWidget {
+  const _ConversationCard({required this.conversation});
+
+  final AiConversation conversation;
+
+  @override
+  State<_ConversationCard> createState() => _ConversationCardState();
+}
+
+class _ConversationCardState extends State<_ConversationCard>
+    with SingleTickerProviderStateMixin {
+  static const double _actionWidth = 160;
+  double _offset = 0;
+  late final AnimationController _ac;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ac = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _anim = _ac.drive(Tween<double>(begin: 0, end: 1));
+  }
+
+  @override
+  void dispose() {
+    _ac.dispose();
+    super.dispose();
+  }
+
+  void _animateTo(double target) {
+    _anim.removeListener(_onAnimTick);
+    _ac.reset();
+    _anim = _ac.drive(Tween<double>(begin: _offset, end: target));
+    _anim.addListener(_onAnimTick);
+    _ac.forward();
+  }
+
+  void _onAnimTick() {
+    setState(() => _offset = _anim.value);
+  }
+
+  void _close() => _animateTo(0);
+
+  @override
+  Widget build(BuildContext context) {
+    final conv = widget.conversation;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        height: 102,
+        child: Stack(
+          children: [
+            // 背景操作按钮
+            Positioned.fill(
+              child: Row(
+                children: [
+                  const Spacer(),
+                  // 置顶按钮
+                  GestureDetector(
+                    onTap: () {
+                      ConversationService.instance.togglePinConversation(
+                        conv.id,
+                      );
+                      _close();
+                    },
+                    child: Container(
+                      width: _actionWidth / 2,
+                      color: const Color(0xFFEDF5F0),
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            conv.isPinned
+                                ? Icons.push_pin_rounded
+                                : Icons.push_pin_outlined,
+                            color: const Color(0xFF18C777),
+                            size: 22,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            conv.isPinned ? '取消' : '置顶',
+                            style: const TextStyle(
+                              color: Color(0xFF18C777),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 删除按钮
+                  GestureDetector(
+                    onTap: () {
+                      ConversationService.instance.removeConversation(conv.id);
+                    },
+                    child: Container(
+                      width: _actionWidth / 2,
+                      color: const Color(0xFFF5EFEF),
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFC4A0A0),
+                            size: 22,
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            '删除',
+                            style: TextStyle(
+                              color: Color(0xFFC4A0A0),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // 卡片层
+            GestureDetector(
+              onHorizontalDragUpdate: (d) {
+                setState(() {
+                  _offset = (_offset + d.delta.dx).clamp(-_actionWidth, 0.0);
+                });
+              },
+              onHorizontalDragEnd: (d) {
+                if (_offset < -_actionWidth * .35) {
+                  _animateTo(-_actionWidth);
+                } else {
+                  _animateTo(0);
+                }
+              },
+              child: AnimatedContainer(
+                duration: _ac.isAnimating
+                    ? Duration.zero
+                    : const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                transform: Matrix4.translationValues(_offset, 0, 0),
+                child: GestureDetector(
+                  onTap: () {
+                    if (_offset < 0) {
+                      _close();
+                    } else {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _ConvChatPage(conversation: conv),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    height: 102,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: conv.isPinned
+                          ? const Color(0xFFF4FAF6)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color.fromRGBO(232, 231, 231, 0.25),
+                          blurRadius: 8,
+                          offset: Offset(0, 0),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF6F8F7),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.map_outlined,
+                            size: 22,
+                            color: Color(0xFF18C777),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                conv.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1C1C1E),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                conv.subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF999999),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _formatTime(conv.createdAt),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFFBBBBBB),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+    if (diff.inHours < 24) return '${diff.inHours}小时前';
+    if (diff.inDays < 7) return '${diff.inDays}天前';
+    return '${time.month}月${time.day}日';
+  }
+}
+
+/// 可继续对话的 AI 聊天页 — 历史对话点击后进入
+class _ConvChatPage extends StatefulWidget {
+  const _ConvChatPage({required this.conversation});
+
+  final AiConversation conversation;
+
+  @override
+  State<_ConvChatPage> createState() => _ConvChatPageState();
+}
+
+class _ConvChatPageState extends State<_ConvChatPage> {
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final AiTravelAgent _agent = createAiTravelAgent();
+  late final List<_AiChatMessage> _messages;
+  final List<AiTravelAgentTurn> _agentHistory = [];
+  bool _isThinking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _messages = widget.conversation.messages.map((m) {
+      return _AiChatMessage(
+        role: m.role == 'user' ? _AiChatRole.user : _AiChatRole.assistant,
+        text: m.content,
+      );
+    }).toList();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send([String? preset]) async {
+    final text = (preset ?? _controller.text).trim();
+    if (text.isEmpty || _isThinking) return;
+
+    setState(() {
+      _controller.clear();
+      _messages.add(_AiChatMessage(role: _AiChatRole.user, text: text));
+      _isThinking = true;
+    });
+    _scrollToBottom();
+
+    try {
+      final history = List<AiTravelAgentTurn>.of(_agentHistory);
+      final reply = await _agent.planTrip(text, history: history);
+      if (!mounted) return;
+      final assistantText = reply.replyText;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(
+            role: _AiChatRole.assistant,
+            text: assistantText,
+            plan: reply.plan,
+            requestStartDate: reply.requestStartDate,
+          ),
+        );
+        _agentHistory
+          ..add(AiTravelAgentTurn(role: AiTravelAgentRole.user, content: text))
+          ..add(
+            AiTravelAgentTurn(
+              role: AiTravelAgentRole.assistant,
+              content: assistantText,
+            ),
+          );
+        _isThinking = false;
+      });
+      // 追加保存到当前对话
+      ConversationService.instance.appendToConversation(
+        widget.conversation.id,
+        messages: [
+          ConvMessage(role: 'user', content: text),
+          ConvMessage(role: 'assistant', content: assistantText),
+        ],
+        result: reply.plan,
+      );
+    } on AiTravelAgentException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(role: _AiChatRole.assistant, text: error.message),
+        );
+        _isThinking = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _AiChatMessage(role: _AiChatRole.assistant, text: 'AI 规划失败：$error'),
+        );
+        _isThinking = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _renameTitle(BuildContext context) {
+    final ctrl = TextEditingController(text: widget.conversation.title);
+    showDialog(
+      context: context,
+      builder: (ctx) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 300,
+            padding: const EdgeInsets.fromLTRB(22, 24, 22, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '修改标题',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF151515),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6F8F7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    maxLength: 30,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1C1C1E),
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: '输入新标题',
+                      hintStyle: TextStyle(
+                        color: Color(0xFFBBBBBB),
+                        fontSize: 15,
+                      ),
+                      counterText: '',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        child: const Text(
+                          '取消',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF999999),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () {
+                        final t = ctrl.text.trim();
+                        if (t.isNotEmpty) {
+                          ConversationService.instance.renameConversation(
+                            widget.conversation.id,
+                            t,
+                          );
+                          setState(() {});
+                        }
+                        Navigator.pop(ctx);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C1C1E),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          '确定',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8F7),
+      body: SafeArea(
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: Column(
+            children: [
+              // Header — 复用聊天页头部 + 编辑/更多按钮
+              SizedBox(
+                height: 66,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 24),
+                        color: const Color(0xFF202326),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          widget.conversation.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF151515),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => _renameTitle(context),
+                        icon: const Icon(Icons.edit_outlined, size: 22),
+                        color: const Color(0xFF202326),
+                      ),
+                      IconButton(
+                        onPressed: () {},
+                        icon: const Icon(Icons.more_vert_rounded, size: 23),
+                        color: const Color(0xFF202326),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const _AiChatModeDivider(label: '继续对话'),
+              Expanded(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
+                  children: [
+                    for (final message in _messages)
+                      _AiMessageBubble(
+                        message: message,
+                        onStartDateSelected: (date) =>
+                            _send(_formatStartDateMessage(date)),
+                      ),
+                    if (_isThinking) const _AiThinkingBubble(),
+                  ],
+                ),
+              ),
+              _AiChatInput(
+                controller: _controller,
+                enabled: !_isThinking,
+                onSend: _send,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConvDetailBubble extends StatelessWidget {
+  const _ConvDetailBubble({required this.text, required this.isUser});
+
+  final String text;
+  final bool isUser;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isUser) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * .7,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              height: 1.42,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _AiOrb(size: 20),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF202426),
+                fontSize: 14,
+                height: 1.42,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConvPlanCard extends StatelessWidget {
+  const _ConvPlanCard({required this.result});
+
+  final TravelAgentResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF18C777),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${result.destination} · ${result.durationDays}天',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF151515),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            result.summary,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: Color(0xFF5F6669),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final day in result.days)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _AiPlanDayRow(day: day),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -4196,41 +7140,50 @@ class PlaceholderPage extends StatelessWidget {
 }
 
 class BottomDock extends StatelessWidget {
-  const BottomDock({super.key, required this.current, required this.onChanged});
+  const BottomDock({
+    super.key,
+    required this.current,
+    required this.onChanged,
+    required this.onCreatePlan,
+  });
 
   final AppTab current;
   final ValueChanged<AppTab> onChanged;
+  final VoidCallback onCreatePlan;
 
   static const double _width = 258;
-  static const double _height = 58;
+  static const double _height = 81;
+  static const double _barTop = 23;
+  static const double _barHeight = 58;
   static const double _activeSize = 32;
-  static const List<double> _buttonCenters = [38, 95, 154, 212];
+  static const double _createSize = 45;
+  static const List<double> _buttonCenters = [31, 86, 172, 227];
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
+      child: SizedBox(
         width: _width,
         height: _height,
-        decoration: BoxDecoration(
-          color: const Color(0xFF050505),
-          borderRadius: BorderRadius.circular(29),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x33000000),
-              blurRadius: 20,
-              offset: Offset(0, 10),
-            ),
-          ],
-        ),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
+            Positioned(
+              left: 0,
+              top: _barTop,
+              child: Image.asset(
+                'assets/icons/navigation.png',
+                width: _width,
+                height: _barHeight,
+                fit: BoxFit.fill,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
             AnimatedPositioned(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,
               left: _buttonCenters[current.index] - (_activeSize / 2),
-              top: 13,
+              top: _barTop + 13,
               child: Container(
                 width: _activeSize,
                 height: _activeSize,
@@ -4243,14 +7196,49 @@ class BottomDock extends StatelessWidget {
             for (final item in _DockButtonItem.items)
               Positioned(
                 left: _buttonCenters[item.tab.index] - 24,
-                top: 5,
+                top: _barTop + 5,
                 child: _DockButton(
                   item: item,
                   active: current == item.tab,
                   onChanged: onChanged,
                 ),
               ),
+            Positioned(
+              left: (_width - _createSize) / 2,
+              top: 0,
+              child: _DockCreateButton(onPressed: onCreatePlan),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DockCreateButton extends StatelessWidget {
+  const _DockCreateButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkResponse(
+        onTap: onPressed,
+        radius: 28,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: BottomDock._createSize,
+          height: BottomDock._createSize,
+          child: Image.asset(
+            'assets/images/Group 61.png',
+            width: BottomDock._createSize,
+            height: BottomDock._createSize,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
         ),
       ),
     );
@@ -4492,7 +7480,7 @@ const demoPois = [
   ),
   Poi(
     id: '3',
-    name: '沈阳故宫',
+    name: '娌堥槼鏁呭',
     latitude: 41.7955,
     longitude: 123.4498,
     category: 'scenic',

@@ -1,0 +1,12 @@
+﻿{
+    "name":  "GoPlan",
+    "lastModified":  "2026-07-07T06:56:28Z",
+    "thumbnailUrl":  "https://s3-alpha.figma.com/thumbnails/47d4a895-1934-496a-8aa9-6cc8135bf235?X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIAQ4GOSFWCZHCZBGZX%2F20260705%2Fus-west-2%2Fs3%2Faws4_request\u0026X-Amz-Date=20260705T120000Z\u0026X-Amz-Expires=604800\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Signature=273b22c04f61952bc85bcd6ac0d412fba607ab906fa14755740a9aed187d5d2a",
+    "version":  "2373370861261906954",
+    "role":  "owner",
+    "editorType":  "figma",
+    "linkAccess":  "view",
+    "nodes":  {
+                  "2123:17":  null
+              }
+}

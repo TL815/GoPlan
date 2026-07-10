@@ -36,12 +36,28 @@ flutter analyze
 # 运行测试
 flutter test
 
+# 检查中文编码
+powershell -ExecutionPolicy Bypass -File .\tool\check_encoding.ps1
+
 # 启动调试（Mock地图模式）
-flutter run
+flutter run --dart-define=DIFY_API_KEY=你的Dify应用APIKey
 
 # 构建Android APK
-flutter build apk --debug
+flutter build apk --debug --dart-define=DIFY_API_KEY=你的Dify应用APIKey
 ```
+
+### Dify Chatflow 配置
+
+AI 对话已接入 Dify Chatflow，运行时通过 `--dart-define` 注入发布应用的 API Key：
+
+```powershell
+flutter run `
+  --dart-define=DIFY_API_KEY=你的Dify应用APIKey `
+  --dart-define=DIFY_API_BASE=https://api.dify.ai/v1 `
+  --dart-define=DIFY_USER_ID=goplan-local-user
+```
+
+如果 Dify 返回内容在追问出发日期/出行时间，APP 会在助手回复里展示日历组件，用户选择日期后会自动把日期作为下一轮消息发回 Dify。
 
 ## 技术栈
 
