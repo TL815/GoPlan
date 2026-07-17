@@ -149,3 +149,25 @@ Jul    Aug    Sep    Oct    Nov    Dec    Jan    Feb    Mar
 | 2026-06 | AI优先对话式交互 | 差异化于圆周旅迹的链接解析模式 |
 | 2026-06 | v1.0不做预订接入 | 保持规划工具纯粹性，避免商业干扰 |
 | 2026-06 | Flutter跨平台 | 双端一套代码，降低研发成本 |
+
+## P0-R6.2 状态
+
+- 已完成：移除旧内存 ConversationService 链路、AiConversation / ConvMessage 模型、探索页旧聊天兼容块，以及未使用的 AiTravelAgent / DifyTravelAgent 文件。
+- 当前 AI 链路：AiChatPage -> AiChatRuntime -> TravelAssistantController -> TravelAssistantGateway -> DifyTravelAssistantGateway。
+- 当前历史链路：ConversationStore -> AssistantConversationSnapshot -> TravelAssistantController；首页历史通过 resumeById 打开聊天。
+- 下一阶段：真实地图数据接入。
+
+## P0-R7 状态
+
+- 已完成：标准 Itinerary UI。
+- 聊天页展示当前最新 `TravelAssistantState.itinerary` 摘要卡。
+- 新增完整 `ItineraryDetailPage`，展示全部 day timeline、预算和 warnings。
+- `showItinerary` / `showBudget` passive action 支持页面内定位。
+- `showMap` 在本阶段不调用地图，仅显示后续版本提示。
+
+## P0-R8 下一阶段
+
+- 标准 Place 坐标展示能力。
+- 地图 Marker。
+- 每日路线预览。
+- `showMap` passive action 正式定位到地图区域。

@@ -132,11 +132,7 @@ class WeatherData {
         'winddirection',
         fallback: _read(today, 'daywind'),
       ),
-      windPower: _read(
-        live,
-        'windpower',
-        fallback: _read(today, 'daypower'),
-      ),
+      windPower: _read(live, 'windpower', fallback: _read(today, 'daypower')),
       humidity: _read(live, 'humidity'),
       reportTime: _read(
         live,
@@ -162,7 +158,9 @@ class WeatherData {
   }
 
   String get conditionLabel {
-    if (dayWeather == null || nightWeather == null || dayWeather == nightWeather) {
+    if (dayWeather == null ||
+        nightWeather == null ||
+        dayWeather == nightWeather) {
       return weather;
     }
     return '$dayWeather转$nightWeather';

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:goplan/main.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('GoPlan shows loading page and enters home', (tester) async {
     await tester.pumpWidget(const GoPlanApp());
 
@@ -35,15 +40,22 @@ void main() {
       MaterialApp(home: PlanDetailFullPage(plan: demoPlans.first)),
     );
 
-    await tester.drag(find.byType(ListView), const Offset(0, -700));
-    await tester.pumpAndSettle();
+    await tester.dragUntilVisible(
+      find.text('行程安排'),
+      find.byType(ListView),
+      const Offset(0, -320),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('目的地路线'), findsOneWidget);
-    expect(find.text('西宁  →  青海湖'), findsOneWidget);
+    expect(find.text('行程安排'), findsOneWidget);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -700));
-    await tester.pumpAndSettle();
+    await tester.dragUntilVisible(
+      find.text('西宁集合'),
+      find.byType(ListView),
+      const Offset(0, -320),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('每日安排'), findsOneWidget);
+    expect(find.text('西宁集合'), findsOneWidget);
   });
 }

@@ -60,9 +60,7 @@ class QWeatherService {
   static Future<QWeather7Day?> fetch7DayForecast(String locationId) async {
     if (!_hasConfiguredHost()) return null;
     final token = await _generateToken();
-    final uri = Uri.https(_apiHost, '/v7/weather/7d', {
-      'location': locationId,
-    });
+    final uri = Uri.https(_apiHost, '/v7/weather/7d', {'location': locationId});
     final data = await _get(uri, token);
     if (data == null) return null;
     return QWeather7Day.fromJson(data);

@@ -120,7 +120,8 @@ class _AmapWebViewState extends State<AmapWebView> {
 
     if (config.securityJsCode.isNotEmpty || config.serviceHost.isNotEmpty) {
       final securityConfig = js.JsObject.jsify({
-        if (config.securityJsCode.isNotEmpty) 'securityJsCode': config.securityJsCode,
+        if (config.securityJsCode.isNotEmpty)
+          'securityJsCode': config.securityJsCode,
         if (config.serviceHost.isNotEmpty) 'serviceHost': config.serviceHost,
       });
       js.context['_AMapSecurityConfig'] = securityConfig;
@@ -186,7 +187,11 @@ class _AmapWebViewState extends State<AmapWebView> {
     map.callMethod('add', [_markerLayer]);
 
     if (markers.isNotEmpty) {
-      map.callMethod('setFitView', [_markerLayer, false, [88, 42, 120, 42]]);
+      map.callMethod('setFitView', [
+        _markerLayer,
+        false,
+        [88, 42, 120, 42],
+      ]);
     }
   }
 

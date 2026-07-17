@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -17,11 +18,19 @@ Future<void> main() async {
 
   // Output private key (base64url)
   final pkB64 = base64Url.encode(privateKeyBytes);
-  print('PRIVATE_KEY_BASE64=$pkB64');
+  stdout.writeln('PRIVATE_KEY_BASE64=$pkB64');
 
   // Construct PEM public key (SPKI format)
   // Ed25519 OID: 1.3.101.112 → 06 03 2B 65 70
-  final algorithmSeq = Uint8List.fromList([0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70]);
+  final algorithmSeq = Uint8List.fromList([
+    0x30,
+    0x05,
+    0x06,
+    0x03,
+    0x2B,
+    0x65,
+    0x70,
+  ]);
   final bitString = Uint8List.fromList([0x03, 0x21, 0x00, ...publicKeyBytes]);
   final derBytes = Uint8List.fromList([
     0x30,
@@ -30,28 +39,28 @@ Future<void> main() async {
     ...bitString,
   ]);
   final pkStandardB64 = base64.encode(derBytes);
-  final pem = '-----BEGIN PUBLIC KEY-----\n$pkStandardB64\n-----END PUBLIC KEY-----';
-  print('PUBLIC_KEY_PEM=$pem');
+  final pem =
+      '-----BEGIN PUBLIC KEY-----\n$pkStandardB64\n-----END PUBLIC KEY-----';
+  stdout.writeln('PUBLIC_KEY_PEM=$pem');
 
   // Verify
   final header = _b64url(jsonEncode({'alg': 'EdDSA', 'kid': 'T4WMKRC36F'}));
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  final payload = _b64url(jsonEncode({
-    'sub': 'T4WMKRC36F',
-    'iat': now,
-    'exp': now + 86400,
-  }));
-  final sig = await Ed25519().signString(
-    '$header.$payload',
-    keyPair: keyPair,
+  final payload = _b64url(
+    jsonEncode({'sub': 'T4WMKRC36F', 'iat': now, 'exp': now + 86400}),
   );
+  final sig = await Ed25519().signString('$header.$payload', keyPair: keyPair);
   final sigB64 = _b64urlBytes(sig.bytes);
-  print('JWT_TEST=$header.$payload.$sigB64');
-  final valid = await Ed25519().verifyString('$header.$payload', signature: sig);
-  print('VERIFY=${valid ? 'PASS' : 'FAIL'}');
+  stdout.writeln('JWT_TEST=$header.$payload.$sigB64');
+  final valid = await Ed25519().verifyString(
+    '$header.$payload',
+    signature: sig,
+  );
+  stdout.writeln('VERIFY=${valid ? 'PASS' : 'FAIL'}');
 }
 
-String _b64url(String s) => base64Url.encode(utf8.encode(s)).replaceAll('=', '');
+String _b64url(String s) =>
+    base64Url.encode(utf8.encode(s)).replaceAll('=', '');
 String _b64urlBytes(List<int> b) => base64Url.encode(b).replaceAll('=', '');
 
 List<int> _decode64(String s) {

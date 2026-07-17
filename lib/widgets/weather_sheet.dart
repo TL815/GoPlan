@@ -56,7 +56,7 @@ class WeatherDrawer extends StatelessWidget {
                     physics: const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     itemCount: days.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, index) => _DayRow(day: days[index]),
                   ),
                 ),
@@ -273,7 +273,7 @@ class _WeatherIcon extends StatelessWidget {
       'https://a.hecdn.net/img/common/icon/202106d/$icon.png',
       width: size,
       height: size,
-      errorBuilder: (_, __, ___) => SizedBox(
+      errorBuilder: (_, _, _) => SizedBox(
         width: size,
         height: size,
         child: const Icon(
@@ -294,7 +294,9 @@ String? _weatherAssetFor({String? icon, String? text}) {
     if (code == 100) return 'assets/icons/\u6674\u5929.png';
     if (code >= 101 && code <= 103) return 'assets/icons/\u591a\u4e91.png';
     if (code == 104) return 'assets/icons/\u9634\u5929.png';
-    if (code == 302 || code == 304) return 'assets/icons/\u96f7\u9635\u96e8.png';
+    if (code == 302 || code == 304) {
+      return 'assets/icons/\u96f7\u9635\u96e8.png';
+    }
     if (code == 305 || code == 309) return 'assets/icons/\u9635\u96e8.png';
     if (code >= 300 && code <= 399) {
       if (code >= 310 && code <= 318) {
@@ -303,7 +305,9 @@ String? _weatherAssetFor({String? icon, String? text}) {
       return 'assets/icons/\u96e8.png';
     }
     if (code >= 400 && code <= 499) return 'assets/icons/\u96ea\u5929.png';
-    if (code >= 503 && code <= 508) return 'assets/icons/\u6c99\u5c18\u66b4.png';
+    if (code >= 503 && code <= 508) {
+      return 'assets/icons/\u6c99\u5c18\u66b4.png';
+    }
     if (code >= 500 && code <= 515) return 'assets/icons/\u96fe\u973e.png';
   }
 

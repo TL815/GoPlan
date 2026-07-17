@@ -16,7 +16,8 @@ const shenyangGugong = PoiDetail(
   district: '沈河区',
   rating: '4.7',
   cost: '50.00',
-  openTime: '4月10日-10月10日 08:30-17:30（16:45停止入场）\n'
+  openTime:
+      '4月10日-10月10日 08:30-17:30（16:45停止入场）\n'
       '10月11日-4月9日 09:00-16:30（15:45停止入场）\n'
       '每周一闭馆（法定节假日除外）',
   photos: [
@@ -73,9 +74,7 @@ const beilingPark = PoiDetail(
   rating: '4.6',
   cost: '5.00',
   openTime: '07:00-17:00',
-  photos: [
-    'https://picsum.photos/400/300?random=4',
-  ],
+  photos: ['https://picsum.photos/400/300?random=4'],
   tags: ['清昭陵', '世界文化遗产', '4A景区', '园林'],
   businessArea: '北陵',
   entranceLocation: '123.4249,41.8268',

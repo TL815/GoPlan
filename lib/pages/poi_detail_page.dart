@@ -41,7 +41,7 @@ class PoiDetailPage extends StatelessWidget {
                         ? Image.network(
                             poi.photos.first,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                            errorBuilder: (_, _, _) => _buildPlaceholder(),
                           )
                         : _buildPlaceholder(),
                   ),
@@ -153,10 +153,7 @@ class PoiDetailPage extends StatelessWidget {
                   // 开放时间
                   if (poi.openTime != null && poi.openTime!.isNotEmpty) ...[
                     _buildSectionTitle('开放时间'),
-                    _buildInfoRow(
-                      Icons.access_time_outlined,
-                      poi.openTime!,
-                    ),
+                    _buildInfoRow(Icons.access_time_outlined, poi.openTime!),
                     const SizedBox(height: 16),
                   ],
 
@@ -195,8 +192,7 @@ class PoiDetailPage extends StatelessWidget {
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: poi.photos.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(width: 8),
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
                         itemBuilder: (context, index) {
                           return ClipRRect(
                             borderRadius: BorderRadius.circular(10),
@@ -205,12 +201,14 @@ class PoiDetailPage extends StatelessWidget {
                               width: 160,
                               height: 120,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
+                              errorBuilder: (_, _, _) => Container(
                                 width: 160,
                                 height: 120,
                                 color: const Color(0xFFE0E0E0),
-                                child: const Icon(Icons.image,
-                                    color: Color(0xFFBBBBBB)),
+                                child: const Icon(
+                                  Icons.image,
+                                  color: Color(0xFFBBBBBB),
+                                ),
                               ),
                             ),
                           );
@@ -254,8 +252,7 @@ class PoiDetailPage extends StatelessWidget {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {},
-                  icon: const Icon(Icons.add_location_alt_outlined,
-                      size: 18),
+                  icon: const Icon(Icons.add_location_alt_outlined, size: 18),
                   label: const Text('加入行程'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1C1C1E),
@@ -279,8 +276,10 @@ class PoiDetailPage extends StatelessWidget {
                 ),
                 child: IconButton(
                   onPressed: () {},
-                  icon: const Icon(Icons.share_outlined,
-                      color: Color(0xFF4C4C4C)),
+                  icon: const Icon(
+                    Icons.share_outlined,
+                    color: Color(0xFF4C4C4C),
+                  ),
                 ),
               ),
             ],
@@ -335,9 +334,7 @@ class PoiDetailPage extends StatelessWidget {
           const SizedBox(width: 24),
           // 室内地图
           _buildStatItem(
-            poi.indoorMap
-                ? Icons.map_outlined
-                : Icons.map_outlined,
+            poi.indoorMap ? Icons.map_outlined : Icons.map_outlined,
             poi.indoorMap ? '支持' : '暂无',
             '室内地图',
             const Color(0xFF999999),
@@ -370,10 +367,7 @@ class PoiDetailPage extends StatelessWidget {
             ),
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFF999999),
-              ),
+              style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
             ),
           ],
         ),
