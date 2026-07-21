@@ -344,10 +344,10 @@ class _AssistantHistoryEmpty extends StatelessWidget {
 String _formatAssistantHistoryTime(DateTime time) {
   final now = DateTime.now();
   final diff = now.difference(time);
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-  if (diff.inHours < 24) return '${diff.inHours} hr ago';
-  if (diff.inDays < 7) return '${diff.inDays} days ago';
+  if (diff.inMinutes < 1) return '刚刚';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+  if (diff.inHours < 24) return '${diff.inHours}小时前';
+  if (diff.inDays < 7) return '${diff.inDays}天前';
   return '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')}';
 }
 
@@ -372,7 +372,7 @@ class _HomeTopSection extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Positioned(left: 0, right: 0, top: 0, child: _HomeHeader()),
-          Positioned(left: 0, right: 0, top: 88, child: _PhotoStrip()),
+          Positioned(left: 0, right: 0, top: 90, child: _PhotoStrip()),
           Positioned(left: 0, right: 0, top: 66, child: _AiDialogBar()),
           Positioned(left: 0, right: 0, bottom: 8, child: _TopDivider()),
         ],
@@ -633,18 +633,17 @@ class _PhotoStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<_HomePhotoItem>>(
-      future: _fetchHomePhotoStripItems(),
+      future: _fetchCurrentHomePhotoStripItems(),
       builder: (context, snapshot) {
         final isLoading = snapshot.connectionState != ConnectionState.done;
         if (isLoading && !snapshot.hasData) {
-          return const _PhotoStripLoading();
+          return _PhotoStripStack(photos: _fallbackHomePhotoItems);
         }
 
         final photos = snapshot.data ?? const [];
-        if (photos.isEmpty) {
-          return const SizedBox(height: 92);
-        }
-        return _PhotoStripStack(photos: photos);
+        return _PhotoStripStack(
+          photos: photos.isEmpty ? _fallbackHomePhotoItems : photos,
+        );
       },
     );
   }
@@ -655,58 +654,7 @@ class _PhotoStripLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const count = 6;
-        const cardWidth = 60.0;
-        const cardHeight = 58.0;
-        const step = 50.0;
-        const totalWidth = cardWidth + step * (count - 1);
-        final leftBase = ((constraints.maxWidth - totalWidth) / 2).clamp(
-          10.0,
-          28.0,
-        );
-
-        return SizedBox(
-          height: 92,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              for (var i = 0; i < count; i++)
-                Positioned(
-                  left: leftBase + i * step,
-                  top: _photoTop(i),
-                  child: Transform.rotate(
-                    angle: _photoAngle(i),
-                    child: Container(
-                      width: cardWidth,
-                      height: cardHeight,
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(13),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x18000000),
-                            blurRadius: 12,
-                            offset: Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEDEDED),
-                          borderRadius: BorderRadius.circular(11),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
+    return _PhotoStripStack(photos: _fallbackHomePhotoItems);
   }
 }
 
@@ -719,30 +667,44 @@ class _PhotoStripStack extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final visiblePhotos = photos.take(6).toList(growable: false);
-        const cardWidth = 60.0;
-        const step = 50.0;
-        final totalWidth = cardWidth + step * (visiblePhotos.length - 1);
-        final leftBase = ((constraints.maxWidth - totalWidth) / 2).clamp(
-          10.0,
-          28.0,
-        );
+        final visiblePhotos = _photoStripVisibleItems(photos);
+        const stripWidth = 306.0;
+        const cardSize = 55.0;
+        final scale = constraints.maxWidth < stripWidth
+            ? constraints.maxWidth / stripWidth
+            : 1.0;
 
         return SizedBox(
-          height: 92,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              for (var i = 0; i < visiblePhotos.length; i++)
-                Positioned(
-                  left: leftBase + i * step,
-                  top: _photoTop(i),
-                  child: Transform.rotate(
-                    angle: _photoAngle(i),
-                    child: _HomePhotoCard(item: visiblePhotos[i]),
-                  ),
+          height: 82,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Transform.scale(
+              alignment: Alignment.topCenter,
+              scale: scale,
+              child: SizedBox(
+                width: stripWidth,
+                height: 66,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (var i = 0; i < visiblePhotos.length; i++)
+                      Positioned(
+                        left: visiblePhotos.length == 1
+                            ? (stripWidth - cardSize) / 2
+                            : i *
+                                  ((stripWidth - cardSize) /
+                                      (visiblePhotos.length - 1)),
+                        bottom: 0,
+                        child: _HomePhotoCard(
+                          item: visiblePhotos[i],
+                          width: cardSize,
+                          height: cardSize,
+                        ),
+                      ),
+                  ],
                 ),
-            ],
+              ),
+            ),
           ),
         );
       },
@@ -750,47 +712,75 @@ class _PhotoStripStack extends StatelessWidget {
   }
 }
 
+List<_HomePhotoItem> _photoStripVisibleItems(List<_HomePhotoItem> photos) {
+  final visiblePhotos = photos.take(7).toList();
+  for (final fallback in _fallbackHomePhotoItems) {
+    if (visiblePhotos.length >= 7) break;
+    visiblePhotos.add(fallback);
+  }
+  return visiblePhotos;
+}
+
 class _HomePhotoCard extends StatelessWidget {
-  const _HomePhotoCard({required this.item});
+  const _HomePhotoCard({
+    required this.item,
+    required this.width,
+    required this.height,
+  });
 
   final _HomePhotoItem item;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(13),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(8),
         onTap: () => _showHomePhotoSpotSheet(context, item: item),
         child: Container(
-          width: 60,
-          height: 58,
+          width: width,
+          height: height,
           padding: const EdgeInsets.all(2),
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(13),
+            borderRadius: BorderRadius.circular(8),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x22000000),
-                blurRadius: 12,
-                offset: Offset(0, 5),
+                color: Color(0x1F000000),
+                blurRadius: 9,
+                offset: Offset(0, 4),
               ),
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(6),
             clipBehavior: Clip.antiAlias,
-            child: Image.network(
-              item.image,
-              width: 60,
-              height: 54,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (_, _, _) =>
-                  const _AmapImageErrorPlaceholder(compact: true),
-            ),
+            child: item.isNetwork
+                ? Image.network(
+                    item.image,
+                    width: width - 4,
+                    height: height - 4,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, _, _) => Image.asset(
+                      item.fallbackImage,
+                      width: width - 4,
+                      height: height - 4,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  )
+                : Image.asset(
+                    item.image,
+                    width: width - 4,
+                    height: height - 4,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                  ),
           ),
         ),
       ),
@@ -1627,7 +1617,7 @@ class _PlanFilters extends StatelessWidget {
         GestureDetector(
           onTap: () => onTabChanged(0),
           child: Text(
-            'My Plans',
+            '我的计划',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -1641,7 +1631,7 @@ class _PlanFilters extends StatelessWidget {
         GestureDetector(
           onTap: () => onTabChanged(1),
           child: Text(
-            'Explore',
+            '探索',
             style: TextStyle(
               fontSize: 15,
               color: activeTab == 1
@@ -1653,7 +1643,7 @@ class _PlanFilters extends StatelessWidget {
         ),
         const Spacer(),
         const Text(
-          'All plans',
+          '全部计划',
           style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C)),
         ),
         const Icon(
@@ -1663,7 +1653,7 @@ class _PlanFilters extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         const Text(
-          'Status',
+          '状态',
           style: TextStyle(fontSize: 11, color: Color(0xFF9C9C9C)),
         ),
         const Icon(
@@ -1766,6 +1756,7 @@ const _fallbackHomePhotos = [
   'assets/images/photo-5.png',
   'assets/images/photo-6.png',
   'assets/images/photo-7.png',
+  'assets/images/photo-sichuan.png',
 ];
 
 List<_HomePhotoItem> get _fallbackHomePhotoItems {
@@ -1877,8 +1868,9 @@ Future<List<_HomePhotoItem>> _fetchHomePhotoStripItems() async {
           ),
         )).expand((s) => s).toList(growable: false);
   final fallbackItems = _fallbackHomePhotoItems;
+  if (results.isEmpty) return fallbackItems;
   return results
-      .take(6)
+      .take(8)
       .indexed
       .map((entry) {
         final index = entry.$1;
@@ -1893,6 +1885,70 @@ Future<List<_HomePhotoItem>> _fetchHomePhotoStripItems() async {
         );
       })
       .toList(growable: false);
+}
+
+Future<List<_HomePhotoItem>> _fetchCurrentHomePhotoStripItems() async {
+  const scenicTypes = '110000';
+  final currentLocation = await _fetchCurrentDeviceLocation();
+  if (currentLocation == null) {
+    return _fetchHomePhotoStripItems();
+  }
+
+  final spots = await fetchAmapPhotoSpotsAround(
+    longitude: currentLocation.longitude,
+    latitude: currentLocation.latitude,
+    keyword: '景点',
+    types: scenicTypes,
+  );
+  if (spots.isEmpty) {
+    return _fetchHomePhotoStripItems();
+  }
+
+  final fallbackItems = _fallbackHomePhotoItems;
+  return spots
+      .take(8)
+      .indexed
+      .map((entry) {
+        final index = entry.$1;
+        final spot = entry.$2;
+        final fallback = fallbackItems[index % fallbackItems.length];
+        return _HomePhotoItem(
+          image: spot.photoUrl,
+          fallbackImage: fallback.fallbackImage,
+          spot: _homePhotoSpotFromAmap(spot),
+          isNetwork: true,
+          amapSpot: spot,
+        );
+      })
+      .toList(growable: false);
+}
+
+Future<_DeviceLocation?> _fetchCurrentDeviceLocation() async {
+  try {
+    final result = await const MethodChannel(
+      'goplan/location',
+    ).invokeMapMethod<String, Object?>('getCurrentLocation');
+    final latitude = _readDouble(result?['latitude']);
+    final longitude = _readDouble(result?['longitude']);
+    if (latitude == null || longitude == null) return null;
+    return _DeviceLocation(latitude: latitude, longitude: longitude);
+  } catch (e) {
+    debugPrint('Current location unavailable: $e');
+    return null;
+  }
+}
+
+double? _readDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
+class _DeviceLocation {
+  const _DeviceLocation({required this.latitude, required this.longitude});
+
+  final double latitude;
+  final double longitude;
 }
 
 _HomePhotoSpot _homePhotoSpotFromAmap(AmapPhotoSpot spot) {

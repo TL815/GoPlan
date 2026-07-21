@@ -435,7 +435,7 @@ class _TravelAssistantChatViewState extends State<TravelAssistantChatView> {
             child: Column(
               children: [
                 _AiChatHeader(onBack: widget.onBack),
-                const _AiChatModeDivider(label: 'Live AI travel planning'),
+                const _AiChatModeDivider(label: '实时 AI 旅行规划'),
                 Expanded(
                   child: ListView(
                     controller: _scrollController,
@@ -595,7 +595,7 @@ class _AiChatEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'I can help turn destination, dates, budget, and preferences into a practical trip plan.',
+            '我可以把目的地、日期、预算和偏好整理成可执行的旅行计划。',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
@@ -611,21 +611,21 @@ class _AiChatEmptyState extends StatelessWidget {
             alignment: WrapAlignment.center,
             children: [
               _AiPromptChip(
-                text: 'Western Sichuan 6 days',
+                text: '川西 6 天',
                 onTap: () => onPromptSelected(
-                  'Plan a 6 day Western Sichuan trip from Chengdu with a comfortable pace.',
+                  '帮我规划从成都出发的川西 6 天旅行，节奏舒适一点。',
                 ),
               ),
               _AiPromptChip(
-                text: 'Hangzhou weekend',
+                text: '杭州周末',
                 onTap: () => onPromptSelected(
-                  'Plan a relaxed 2 day Hangzhou weekend with West Lake, cafes, and photo spots.',
+                  '帮我规划杭州 2 天游，想去西湖、咖啡馆和适合拍照的地方，节奏轻松一点。',
                 ),
               ),
               _AiPromptChip(
-                text: 'Yunnan graduation',
+                text: '云南毕业旅行',
                 onTap: () => onPromptSelected(
-                  'Plan an 8 day Yunnan graduation trip for 4 people who like food and nature.',
+                  '帮 4 个喜欢美食和自然风景的人规划云南 8 天毕业旅行。',
                 ),
               ),
             ],

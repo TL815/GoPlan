@@ -21,37 +21,25 @@ class LoadingPage extends StatelessWidget {
             Positioned(
               left: size.width * 0.29,
               top: size.height * 0.10,
-              child: RotatedBox(
-                quarterTurns: 0,
-                child: Transform.rotate(
-                  angle: 0.18,
-                  child: _TravelPoster(
+              child: _TravelPoster(
                     asset: 'assets/images/卡片一.png',
                     width: size.width * 0.92,
-                  ),
-                ),
               ),
             ),
             Positioned(
               left: size.width * 0.05,
               top: size.height * 0.32,
-              child: Transform.rotate(
-                angle: -0.34,
-                child: _TravelPoster(
+              child: _TravelPoster(
                   asset: 'assets/images/卡片二.png',
                   width: size.width * 0.94,
-                ),
               ),
             ),
             Positioned(
               left: size.width * 0.36,
               top: size.height * 0.52,
-              child: Transform.rotate(
-                angle: 0.36,
-                child: _TravelPoster(
+              child: _TravelPoster(
                   asset: 'assets/images/卡片三.png',
                   width: size.width * 0.92,
-                ),
               ),
             ),
           ],
